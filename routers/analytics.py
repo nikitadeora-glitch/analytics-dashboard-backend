@@ -222,11 +222,24 @@ def track_exit_link(project_id: int, link_data: dict, db: Session = Depends(get_
     
     url = link_data.get('url')
     from_page = link_data.get('from_page')
+    visitor_id = link_data.get('visitor_id')
+    session_id = link_data.get('session_id')
     
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
     
-    # Check if this exit link already exists
+    # Track individual click
+    exit_click = models.ExitLinkClick(
+        project_id=project_id,
+        visitor_id=visitor_id,
+        session_id=session_id,
+        url=url,
+        from_page=from_page,
+        clicked_at=datetime.utcnow()
+    )
+    db.add(exit_click)
+    
+    # Update aggregated exit link stats
     exit_link = db.query(models.ExitLink).filter(
         models.ExitLink.project_id == project_id,
         models.ExitLink.url == url,
