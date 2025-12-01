@@ -11,11 +11,15 @@ import os
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="State Counter Analytics API")
-
+origins = [
+    "https://statecounterrahul.netlify.app",
+    "http://statecounterrahul.netlify.app",
+    "http://localhost:3000"
+]
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
