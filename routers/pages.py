@@ -40,11 +40,12 @@ def get_most_visited_pages(project_id: int, limit: int = 10, db: Session = Depen
         
         bounce_rate = (bounced / total_as_entry * 100) if total_as_entry > 0 else 0
         
-        # Get all visits that viewed this page with visitor_id
+        # Get all visits that viewed this page with visitor_id and session_id
         visits = db.query(
-            models.Visit.id,
+            models.Visit.session_id,
             models.Visit.visitor_id,
-            models.Visit.visited_at
+            models.Visit.visited_at,
+            models.Visit.session_duration
         ).join(models.PageView).filter(
             models.Visit.project_id == project_id,
             models.PageView.url == ps[0]
@@ -60,7 +61,8 @@ def get_most_visited_pages(project_id: int, limit: int = 10, db: Session = Depen
             "visits": [{
                 "session_id": v[0],
                 "visitor_id": v[1],
-                "visited_at": v[2]
+                "visited_at": v[2],
+                "time_spent": v[3] or 0
             } for v in visits]
         })
     
@@ -90,11 +92,12 @@ def get_entry_pages(project_id: int, db: Session = Depends(get_db)):
         
         bounce_rate = (bounced_sessions / total_sessions * 100) if total_sessions > 0 else 0
         
-        # Get all visits for this entry page with visitor_id and page views count
+        # Get all visits for this entry page with visitor_id and session_id
         visits = db.query(
-            models.Visit.id,
+            models.Visit.session_id,
             models.Visit.visitor_id,
-            models.Visit.visited_at
+            models.Visit.visited_at,
+            models.Visit.session_duration
         ).filter(
             models.Visit.project_id == project_id,
             models.Visit.entry_page == ep[0]
@@ -115,7 +118,8 @@ def get_entry_pages(project_id: int, db: Session = Depends(get_db)):
             "visits": [{
                 "session_id": v[0],
                 "visitor_id": v[1],
-                "visited_at": v[2]
+                "visited_at": v[2],
+                "time_spent": v[3] or 0
             } for v in visits]
         })
     
@@ -144,11 +148,12 @@ def get_exit_pages(project_id: int, db: Session = Depends(get_db)):
         
         exit_rate = (total_exits / total_views * 100) if total_views > 0 else 0
         
-        # Get all visits for this exit page with visitor_id
+        # Get all visits for this exit page with visitor_id and session_id
         visits = db.query(
-            models.Visit.id,
+            models.Visit.session_id,
             models.Visit.visitor_id,
-            models.Visit.visited_at
+            models.Visit.visited_at,
+            models.Visit.session_duration
         ).filter(
             models.Visit.project_id == project_id,
             models.Visit.exit_page == ep[0]
@@ -169,7 +174,8 @@ def get_exit_pages(project_id: int, db: Session = Depends(get_db)):
             "visits": [{
                 "session_id": v[0],
                 "visitor_id": v[1],
-                "visited_at": v[2]
+                "visited_at": v[2],
+                "time_spent": v[3] or 0
             } for v in visits]
         })
     
