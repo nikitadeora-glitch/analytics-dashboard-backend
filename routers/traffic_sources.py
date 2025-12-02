@@ -112,7 +112,26 @@ def get_referrers(project_id: int, db: Session = Depends(get_db)):
     return [{"referrer": r[0], "count": r[1]} for r in referrers]
 
 @router.get("/{project_id}/exit-links")
-def get_exit_links(project_id: int, db: Session = Depends(get_db)):
+def get_exit_links(project_id: int, limit: int = 100, db: Session = Depends(get_db)):
+    """Get individual exit link clicks"""
+    # Get individual clicks ordered by most recent first
+    exit_clicks = db.query(models.ExitLinkClick).filter(
+        models.ExitLinkClick.project_id == project_id
+    ).order_by(desc(models.ExitLinkClick.clicked_at)).limit(limit).all()
+    
+    # Return individual click entries
+    return [{
+        "id": click.id,
+        "url": click.url,
+        "from_page": click.from_page,
+        "visitor_id": click.visitor_id,
+        "session_id": click.session_id,
+        "clicked_at": click.clicked_at
+    } for click in exit_clicks]
+
+@router.get("/{project_id}/exit-links-summary")
+def get_exit_links_summary(project_id: int, db: Session = Depends(get_db)):
+    """Get aggregated exit link statistics"""
     exit_links = db.query(models.ExitLink).filter(
         models.ExitLink.project_id == project_id
     ).order_by(desc(models.ExitLink.click_count)).limit(20).all()

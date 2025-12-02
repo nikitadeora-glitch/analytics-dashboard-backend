@@ -113,3 +113,15 @@ class ExitLink(Base):
     from_page = Column(String)
     click_count = Column(Integer, default=1)
     last_clicked = Column(DateTime, default=datetime.utcnow)
+
+class ExitLinkClick(Base):
+    """Track individual exit link clicks"""
+    __tablename__ = "exit_link_clicks"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"))
+    visitor_id = Column(String, index=True)
+    session_id = Column(String, index=True)
+    url = Column(String, nullable=False)
+    from_page = Column(String)
+    clicked_at = Column(DateTime, default=datetime.utcnow, index=True)
