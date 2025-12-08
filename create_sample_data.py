@@ -39,6 +39,7 @@ for i in range(50):
     visit = models.Visit(
         project_id=project.id,
         visitor_id=f"visitor_{i}",
+        session_id=f"session_{i}_{random.randint(1000, 9999)}",
         ip_address=f"192.168.1.{i}",
         country=random.choice(countries),
         state=random.choice(states),
@@ -52,13 +53,43 @@ for i in range(50):
         entry_page=f"/page-{random.randint(1, 5)}",
         exit_page=f"/page-{random.randint(1, 5)}",
         session_duration=random.randint(30, 600),
-        visited_at=datetime.utcnow() - timedelta(hours=random.randint(0, 48)),
+        visited_at=datetime.utcnow() - timedelta(days=random.randint(0, 30)),
         is_unique=random.choice([True, False])
     )
     db.add(visit)
 
 db.commit()
 print(f"✓ Created 50 sample visits")
+
+# Create sample page views for each visit
+print("\nCreating sample page views...")
+all_visits = db.query(models.Visit).filter(models.Visit.project_id == project.id).all()
+page_urls = ["/", "/about", "/products", "/contact", "/blog", "/pricing", "/features"]
+page_titles = ["Home", "About Us", "Products", "Contact", "Blog", "Pricing", "Features"]
+
+pageview_count = 0
+for visit in all_visits:
+    # Each visit has 2-5 page views
+    num_pages = random.randint(2, 5)
+    visit_time = visit.visited_at
+    
+    for i in range(num_pages):
+        page_idx = random.randint(0, len(page_urls) - 1)
+        time_spent = random.randint(10, 180)  # 10 seconds to 3 minutes
+        
+        pageview = models.PageView(
+            visit_id=visit.id,
+            url=page_urls[page_idx],
+            title=page_titles[page_idx],
+            time_spent=time_spent,
+            scroll_depth=random.randint(20, 100),
+            viewed_at=visit_time + timedelta(seconds=i * 30)  # Each page 30 seconds apart
+        )
+        db.add(pageview)
+        pageview_count += 1
+
+db.commit()
+print(f"✓ Created {pageview_count} sample page views")
 
 # Create sample pages
 print("\nCreating sample pages...")
@@ -123,12 +154,17 @@ for keyword in keywords:
 db.commit()
 print(f"✓ Created {len(keywords)} keywords")
 
+# Store project info before closing session
+project_id = project.id
+project_name = project.name
+tracking_code = project.tracking_code
+
 db.close()
 
 print("\n" + "="*50)
 print("✓ Sample data created successfully!")
 print("="*50)
-print(f"\nProject ID: {project.id}")
-print(f"Project Name: {project.name}")
-print(f"Tracking Code: {project.tracking_code}")
+print(f"\nProject ID: {project_id}")
+print(f"Project Name: {project_name}")
+print(f"Tracking Code: {tracking_code}")
 print("\nYou can now view the dashboard with sample data!")

@@ -469,18 +469,23 @@
     });
   }
 
+  let currentPageViewId = null;
+
   function trackPageView(url, title) {
     if (!visitId) {
       log('⚠️ No visit ID, skipping page view');
       return;
     }
 
-    const timeSpent = Math.floor((Date.now() - pageLoadTime) / 1000);
-    
+    // Update previous page view with actual time spent before tracking new one
+    if (currentPageViewId) {
+      updatePageViewTimeSpent(currentPageViewId);
+    }
+
     const data = {
       url: url || window.location.href,
       title: title || document.title,
-      time_spent: timeSpent
+      time_spent: 0  // Initial time is 0, will be updated on exit
     };
 
     const apiUrl = `${CONFIG.apiUrl}/analytics/${CONFIG.projectId}/pageview/${visitId}`;
@@ -495,6 +500,7 @@
     .then(res => res.json())
     .then(result => {
       log('✅ Page view tracked!', result);
+      currentPageViewId = result.pageview_id;
     })
     .catch(err => {
       log('❌ Page view error:', err.message);
@@ -504,8 +510,40 @@
     pageLoadTime = Date.now();
   }
 
+  function updatePageViewTimeSpent(pageViewId) {
+    const timeSpent = Math.floor((Date.now() - pageLoadTime) / 1000);
+    
+    if (timeSpent < 1) return; // Don't update if less than 1 second
+
+    const data = {
+      time_spent: timeSpent
+    };
+
+    const apiUrl = `${CONFIG.apiUrl}/analytics/${CONFIG.projectId}/pageview/${visitId}/update/${pageViewId}`;
+    
+    log('⏱️ Updating time spent:', timeSpent + 's');
+
+    // Use sendBeacon for reliable tracking
+    if (navigator.sendBeacon) {
+      const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+      navigator.sendBeacon(apiUrl, blob);
+    } else {
+      fetch(apiUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+        keepalive: true
+      }).catch(() => {});
+    }
+  }
+
   function trackExit() {
     if (!visitId) return;
+
+    // Update last page view time spent
+    if (currentPageViewId) {
+      updatePageViewTimeSpent(currentPageViewId);
+    }
 
     const timeSpent = Math.floor((Date.now() - pageLoadTime) / 1000);
     
