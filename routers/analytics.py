@@ -9,7 +9,7 @@ from typing import Optional
 router = APIRouter()
 
 @router.get("/{project_id}/summary")
-def get_summary(project_id: int, db: Session = Depends(get_db)):
+def get_summary(project_id: int, days: int = 30, db: Session = Depends(get_db)):
     # Total visits
     total_visits = db.query(models.Visit).filter(models.Visit.project_id == project_id).count()
     
@@ -25,37 +25,46 @@ def get_summary(project_id: int, db: Session = Depends(get_db)):
         models.Visit.visited_at >= five_min_ago
     ).scalar()
     
-    # Daily stats for last 7 days
+    # Daily stats for specified number of days - OPTIMIZED
+    from sqlalchemy import case, cast, Date
+    
+    start_date = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
+    
+    # Single query to get all stats grouped by date
+    daily_data = db.query(
+        cast(models.Visit.visited_at, Date).label('visit_date'),
+        func.count(models.Visit.id).label('page_views'),
+        func.count(func.distinct(models.Visit.visitor_id)).label('unique_visits'),
+        func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits')
+    ).filter(
+        models.Visit.project_id == project_id,
+        models.Visit.visited_at >= start_date
+    ).group_by('visit_date').all()
+    
+    # Create a dict for quick lookup
+    stats_dict = {
+        row.visit_date: {
+            'page_views': row.page_views,
+            'unique_visits': row.unique_visits,
+            'first_time_visits': row.first_time_visits or 0
+        }
+        for row in daily_data
+    }
+    
+    # Build daily stats array with all days (including days with no data)
     daily_stats = []
-    for i in range(6, -1, -1):
+    for i in range(days - 1, -1, -1):
         day_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=i)
-        day_end = day_start + timedelta(days=1)
+        day_date = day_start.date()
         
-        page_views = db.query(models.Visit).filter(
-            models.Visit.project_id == project_id,
-            models.Visit.visited_at >= day_start,
-            models.Visit.visited_at < day_end
-        ).count()
-        
-        unique_visits = db.query(func.count(func.distinct(models.Visit.visitor_id))).filter(
-            models.Visit.project_id == project_id,
-            models.Visit.visited_at >= day_start,
-            models.Visit.visited_at < day_end
-        ).scalar() or 0
-        
-        first_time = db.query(models.Visit).filter(
-            models.Visit.project_id == project_id,
-            models.Visit.visited_at >= day_start,
-            models.Visit.visited_at < day_end,
-            models.Visit.is_unique == True
-        ).count()
+        stats = stats_dict.get(day_date, {'page_views': 0, 'unique_visits': 0, 'first_time_visits': 0})
         
         daily_stats.append({
             "date": day_start.strftime("%a, %d %b %Y"),
-            "page_views": page_views,
-            "unique_visits": unique_visits,
-            "first_time_visits": first_time,
-            "returning_visits": unique_visits - first_time
+            "page_views": stats['page_views'],
+            "unique_visits": stats['unique_visits'],
+            "first_time_visits": stats['first_time_visits'],
+            "returning_visits": stats['unique_visits'] - stats['first_time_visits']
         })
     
     # Calculate averages
@@ -187,6 +196,31 @@ def track_pageview(project_id: int, visit_id: int, pageview: schemas.PageViewCre
     return {
         "pageview_id": db_pageview.id,
         "message": "Page view tracked"
+    }
+
+@router.put("/{project_id}/pageview/{visit_id}/update/{pageview_id}")
+def update_pageview_time(project_id: int, visit_id: int, pageview_id: int, data: dict, db: Session = Depends(get_db)):
+    """Update time spent on a page view"""
+    
+    # Find the page view
+    pageview = db.query(models.PageView).join(models.Visit).filter(
+        models.PageView.id == pageview_id,
+        models.Visit.id == visit_id,
+        models.Visit.project_id == project_id
+    ).first()
+    
+    if not pageview:
+        raise HTTPException(status_code=404, detail="Page view not found")
+    
+    # Update time spent
+    if 'time_spent' in data:
+        pageview.time_spent = data['time_spent']
+    
+    db.commit()
+    
+    return {
+        "message": "Time spent updated",
+        "time_spent": pageview.time_spent
     }
 
 @router.post("/{project_id}/exit/{visit_id}")

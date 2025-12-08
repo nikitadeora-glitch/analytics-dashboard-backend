@@ -7,7 +7,7 @@ import models
 router = APIRouter()
 
 @router.get("/{project_id}/most-visited")
-def get_most_visited_pages(project_id: int, limit: int = 10, db: Session = Depends(get_db)):
+def get_most_visited_pages(project_id: int, limit: int = 100, db: Session = Depends(get_db)):
     """Get all visited pages sorted by total views (Top Pages)"""
     # Get page views with aggregated data
     page_stats = db.query(
@@ -69,7 +69,7 @@ def get_most_visited_pages(project_id: int, limit: int = 10, db: Session = Depen
     return result
 
 @router.get("/{project_id}/entry-pages")
-def get_entry_pages(project_id: int, db: Session = Depends(get_db)):
+def get_entry_pages(project_id: int, limit: int = 100, db: Session = Depends(get_db)):
     """Get pages where visitors first land (entry pages)"""
     entry_pages = db.query(
         models.Visit.entry_page,
@@ -78,7 +78,7 @@ def get_entry_pages(project_id: int, db: Session = Depends(get_db)):
     ).filter(
         models.Visit.project_id == project_id,
         models.Visit.entry_page.isnot(None)
-    ).group_by(models.Visit.entry_page).order_by(desc('sessions')).limit(10).all()
+    ).group_by(models.Visit.entry_page).order_by(desc('sessions')).limit(limit).all()
     
     result = []
     for ep in entry_pages:
@@ -126,7 +126,7 @@ def get_entry_pages(project_id: int, db: Session = Depends(get_db)):
     return result
 
 @router.get("/{project_id}/exit-pages")
-def get_exit_pages(project_id: int, db: Session = Depends(get_db)):
+def get_exit_pages(project_id: int, limit: int = 100, db: Session = Depends(get_db)):
     """Get pages where visitors leave the site (exit pages)"""
     exit_pages = db.query(
         models.Visit.exit_page,
@@ -135,7 +135,7 @@ def get_exit_pages(project_id: int, db: Session = Depends(get_db)):
     ).filter(
         models.Visit.project_id == project_id,
         models.Visit.exit_page.isnot(None)
-    ).group_by(models.Visit.exit_page).order_by(desc('exits')).limit(10).all()
+    ).group_by(models.Visit.exit_page).order_by(desc('exits')).limit(limit).all()
     
     result = []
     for ep in exit_pages:
