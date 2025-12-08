@@ -14,6 +14,8 @@ app = FastAPI(title="State Counter Analytics API")
 origins = [
     "https://statecounterrahul.netlify.app",
     "http://statecounterrahul.netlify.app",
+    "https://seo.prpwebs.com",
+    "http://seo.prpwebs.com",
     "http://localhost:3000"
 ]
 # CORS
