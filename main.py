@@ -41,20 +41,6 @@ def root():
 def health_check():
     return {"status": "healthy"}
 
-@app.get("/analytics.js")
-def serve_analytics_script():
-    """Serve the analytics.js tracking script"""
-    # Get the path to analytics.js (one level up from backend folder)
-    script_path = os.path.join(os.path.dirname(__file__), "..", "analytics.js")
-    
-    if not os.path.exists(script_path):
-        raise HTTPException(status_code=404, detail="Analytics script not found")
-    
-    return FileResponse(
-        script_path,
-        media_type="application/javascript",
-        headers={
-            "Cache-Control": "public, max-age=3600",  # Cache for 1 hour
-            "Access-Control-Allow-Origin": "*"
-        }
-    )
+@app.get("/api/analytics.js")
+def serve_analytics_js():
+    return FileResponse("analytics.js", media_type="application/javascript")
