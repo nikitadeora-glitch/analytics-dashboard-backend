@@ -477,14 +477,7 @@
       return;
     }
 
-<<<<<<< HEAD
-    // Update previous page view with actual time spent before tracking new one
-    if (currentPageViewId) {
-      updatePageViewTimeSpent(currentPageViewId);
-    }
-=======
     const timeSpent = Math.floor((Date.now() - pageLoadTime) / 1000);
->>>>>>> a8ce592aba9f49a3d7ae354f8a80485c59151396
 
     const data = {
       url: url || window.location.href,
@@ -501,16 +494,6 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     })
-<<<<<<< HEAD
-    .then(res => res.json())
-    .then(result => {
-      log('✅ Page view tracked!', result);
-      currentPageViewId = result.pageview_id;
-    })
-    .catch(err => {
-      log('❌ Page view error:', err.message);
-    });
-=======
       .then(res => res.json())
       .then(result => {
         log('✅ Page view tracked!', result);
@@ -518,7 +501,6 @@
       .catch(err => {
         log('❌ Page view error:', err.message);
       });
->>>>>>> a8ce592aba9f49a3d7ae354f8a80485c59151396
 
     // Reset timer for next page
     pageLoadTime = Date.now();
@@ -526,7 +508,7 @@
 
   function updatePageViewTimeSpent(pageViewId) {
     const timeSpent = Math.floor((Date.now() - pageLoadTime) / 1000);
-    
+
     if (timeSpent < 1) return; // Don't update if less than 1 second
 
     const data = {
@@ -534,7 +516,7 @@
     };
 
     const apiUrl = `${CONFIG.apiUrl}/analytics/${CONFIG.projectId}/pageview/${visitId}/update/${pageViewId}`;
-    
+
     log('⏱️ Updating time spent:', timeSpent + 's');
 
     // Use sendBeacon for reliable tracking
@@ -547,7 +529,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
         keepalive: true
-      }).catch(() => {});
+      }).catch(() => { });
     }
   }
 
