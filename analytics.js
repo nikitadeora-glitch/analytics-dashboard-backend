@@ -477,7 +477,10 @@
       return;
     }
 
-    const timeSpent = Math.floor((Date.now() - pageLoadTime) / 1000);
+    // Update previous page view time before tracking new one
+    if (currentPageViewId) {
+      updatePageViewTimeSpent(currentPageViewId);
+    }
 
     const data = {
       url: url || window.location.href,
@@ -497,6 +500,8 @@
       .then(res => res.json())
       .then(result => {
         log('✅ Page view tracked!', result);
+        // Store the pageview ID for later updates
+        currentPageViewId = result.pageview_id;
       })
       .catch(err => {
         log('❌ Page view error:', err.message);
@@ -507,6 +512,8 @@
   }
 
   function updatePageViewTimeSpent(pageViewId) {
+    if (!pageViewId || !visitId) return;
+
     const timeSpent = Math.floor((Date.now() - pageLoadTime) / 1000);
 
     if (timeSpent < 1) return; // Don't update if less than 1 second
@@ -515,9 +522,9 @@
       time_spent: timeSpent
     };
 
-    const apiUrl = `${CONFIG.apiUrl}/analytics/${CONFIG.projectId}/pageview/${visitId}/update/${pageViewId}`;
+    const apiUrl = `${CONFIG.apiUrl}analytics/${CONFIG.projectId}/pageview/${visitId}/update/${pageViewId}`;
 
-    log('⏱️ Updating time spent:', timeSpent + 's');
+    log('⏱️ Updating time spent:', timeSpent + 's for pageview', pageViewId);
 
     // Use sendBeacon for reliable tracking
     if (navigator.sendBeacon) {
