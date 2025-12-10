@@ -8,3 +8,9 @@ env/
 
 # Local DB
 *.sqlite3
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+ 
