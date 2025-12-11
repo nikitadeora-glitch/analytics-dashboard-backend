@@ -67,6 +67,27 @@ def get_summary(project_id: int, days: int = 30, db: Session = Depends(get_db)):
             "returning_visits": stats['unique_visits'] - stats['first_time_visits']
         })
     
+    # Get ALL historical data (no date limit)
+    all_time_data = db.query(
+        cast(models.Visit.visited_at, Date).label('visit_date'),
+        func.count(models.Visit.id).label('page_views'),
+        func.count(func.distinct(models.Visit.visitor_id)).label('unique_visits'),
+        func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits')
+    ).filter(
+        models.Visit.project_id == project_id
+    ).group_by('visit_date').order_by('visit_date').all()
+    
+    # Build all-time daily stats
+    all_daily_stats = []
+    for row in all_time_data:
+        all_daily_stats.append({
+            "date": row.visit_date.strftime("%a, %d %b %Y"),
+            "page_views": row.page_views,
+            "unique_visits": row.unique_visits,
+            "first_time_visits": row.first_time_visits or 0,
+            "returning_visits": row.unique_visits - (row.first_time_visits or 0)
+        })
+    
     # Calculate averages
     total_days = len(daily_stats)
     avg_page_views = sum(d["page_views"] for d in daily_stats) / total_days if total_days > 0 else 0
@@ -104,6 +125,7 @@ def get_summary(project_id: int, days: int = 30, db: Session = Depends(get_db)):
         "unique_visitors": unique_visitors,
         "live_visitors": live_visitors,
         "daily_stats": daily_stats,
+        "all_daily_stats": all_daily_stats,  # Complete historical data
         "averages": {
             "page_views": round(avg_page_views, 1),
             "unique_visits": round(avg_unique_visits, 1),
