@@ -138,39 +138,86 @@ def get_visitor_all_sessions(project_id: int, visitor_id: str, db: Session = Dep
         "sessions": sessions
     }
 
+@router.get("/{project_id}/debug-data")
+def debug_project_data(project_id: int, db: Session = Depends(get_db)):
+    """Debug endpoint to check what data exists"""
+    # Check all projects
+    all_projects = db.query(models.Visit.project_id).distinct().all()
+    
+    # Check data for this specific project
+    total_visits = db.query(models.Visit).filter(models.Visit.project_id == project_id).count()
+    
+    # Get sample visits
+    sample_visits = db.query(models.Visit).filter(models.Visit.project_id == project_id).limit(5).all()
+    
+    # Get all unique entry pages
+    entry_pages = db.query(models.Visit.entry_page).filter(
+        models.Visit.project_id == project_id,
+        models.Visit.entry_page.isnot(None)
+    ).distinct().all()
+    
+    return {
+        "all_project_ids": [p[0] for p in all_projects],
+        "requested_project_id": project_id,
+        "total_visits_in_project": total_visits,
+        "sample_visits": [
+            {
+                "id": v.id,
+                "visitor_id": v.visitor_id,
+                "entry_page": v.entry_page,
+                "visited_at": str(v.visited_at)
+            } for v in sample_visits
+        ],
+        "all_entry_pages": [ep[0] for ep in entry_pages if ep[0]]
+    }
+
 @router.get("/{project_id}/by-page")
 def get_visitors_by_page(project_id: int, page_url: str, db: Session = Depends(get_db)):
-    """Get all visitors who visited a specific page"""
-    # Get all page views for this URL
-    page_views = db.query(models.PageView).join(
-        models.Visit, models.PageView.visit_id == models.Visit.id
-    ).filter(
+    # Debug: First check if we have any visits for this project
+    total_visits = db.query(models.Visit).filter(models.Visit.project_id == project_id).count()
+    print(f"DEBUG: Total visits for project {project_id}: {total_visits}")
+    
+    # Debug: Check what entry_pages exist
+    entry_pages = db.query(models.Visit.entry_page).filter(models.Visit.project_id == project_id).distinct().all()
+    print(f"DEBUG: Available entry pages: {[ep[0] for ep in entry_pages]}")
+    print(f"DEBUG: Looking for page_url: '{page_url}'")
+    
+    # Try exact match first
+    exact_visits = db.query(models.Visit).filter(
         models.Visit.project_id == project_id,
-        models.PageView.url == page_url
+        models.Visit.entry_page == page_url
     ).all()
+    print(f"DEBUG: Exact match results: {len(exact_visits)}")
     
-    # Get unique visitor IDs
-    visitor_ids = list(set([pv.visit.visitor_id for pv in page_views]))
-    
-    # Get visitor details
-    visitors = []
-    for visitor_id in visitor_ids:
-        visit = db.query(models.Visit).filter(
-            models.Visit.project_id == project_id,
-            models.Visit.visitor_id == visitor_id
-        ).order_by(desc(models.Visit.visited_at)).first()
-        
-        if visit:
-            visitors.append({
-                "visitor_id": visitor_id,
-                "country": visit.country,
-                "city": visit.city,
-                "device": visit.device,
-                "browser": visit.browser,
-                "last_visit": visit.visited_at
-            })
-    
-    return visitors
+    # Try ILIKE match
+    visits = db.query(models.Visit).filter(
+        models.Visit.project_id == project_id,
+        models.Visit.entry_page.ilike(f"%{page_url}%")
+    ).all()
+    print(f"DEBUG: ILIKE match results: {len(visits)}")
+
+    return {
+        "debug_info": {
+            "total_visits_in_project": total_visits,
+            "available_entry_pages": [ep[0] for ep in entry_pages],
+            "search_term": page_url,
+            "exact_matches": len(exact_visits),
+            "ilike_matches": len(visits)
+        },
+        "visitors": [
+            {
+                "visitor_id": v.visitor_id,
+                "country": v.country,
+                "city": v.city,
+                "device": v.device,
+                "browser": v.browser,
+                "last_visit": v.visited_at,
+                "entry_page": v.entry_page
+            }
+            for v in visits
+        ]
+    }
+
 
 @router.get("/{project_id}/map")
 def get_visitor_map(project_id: int, db: Session = Depends(get_db)):
@@ -200,3 +247,67 @@ def get_visitor_map(project_id: int, db: Session = Depends(get_db)):
         "longitude": loc[4],
         "count": loc[5]
     } for loc in locations]
+
+@router.post("/{project_id}/bulk-sessions")
+def get_bulk_visitor_sessions(project_id: int, visitor_ids: list[str], db: Session = Depends(get_db)):
+    """OPTIMIZED: Get sessions for multiple visitors in a single request"""
+    if not visitor_ids or len(visitor_ids) == 0:
+        return {}
+    
+    # Limit to prevent abuse
+    visitor_ids = visitor_ids[:10]
+    
+    # Get all visits for these visitors in one query
+    visits = db.query(models.Visit).filter(
+        models.Visit.project_id == project_id,
+        models.Visit.visitor_id.in_(visitor_ids)
+    ).order_by(desc(models.Visit.visited_at)).all()
+    
+    # Get all page views for these visits in one query
+    visit_ids = [v.id for v in visits]
+    page_views = db.query(models.PageView).filter(
+        models.PageView.visit_id.in_(visit_ids)
+    ).order_by(models.PageView.viewed_at).all()
+    
+    # Group page views by visit_id
+    page_views_by_visit = {}
+    for pv in page_views:
+        if pv.visit_id not in page_views_by_visit:
+            page_views_by_visit[pv.visit_id] = []
+        page_views_by_visit[pv.visit_id].append({
+            "url": pv.url,
+            "title": pv.title,
+            "time_spent": pv.time_spent,
+            "viewed_at": pv.viewed_at
+        })
+    
+    # Group visits by visitor_id
+    result = {}
+    for visit in visits:
+        visitor_id = visit.visitor_id
+        if visitor_id not in result:
+            result[visitor_id] = {
+                "visitor_id": visitor_id,
+                "total_sessions": 0,
+                "sessions": []
+            }
+        
+        result[visitor_id]["total_sessions"] += 1
+        result[visitor_id]["sessions"].append({
+            "session_id": visit.id,
+            "session_number": visit.session_id,
+            "visited_at": visit.visited_at,
+            "entry_page": visit.entry_page,
+            "exit_page": visit.exit_page,
+            "session_duration": visit.session_duration,
+            "referrer": visit.referrer,
+            "device": visit.device,
+            "browser": visit.browser,
+            "os": visit.os,
+            "country": visit.country,
+            "city": visit.city,
+            "page_count": len(page_views_by_visit.get(visit.id, [])),
+            "page_journey": page_views_by_visit.get(visit.id, [])
+        })
+    
+    return result

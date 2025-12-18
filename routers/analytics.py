@@ -5,11 +5,52 @@ from database import get_db
 import models, schemas
 from datetime import datetime, timedelta
 from typing import Optional
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 router = APIRouter()
+security = HTTPBearer(auto_error=False)  # Make authentication optional
+
+def get_current_user_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: Session = Depends(get_db)
+) -> Optional[models.User]:
+    """Get current user if authenticated, otherwise return None"""
+    if not credentials:
+        return None
+    
+    try:
+        from routers.auth import verify_token
+        token = credentials.credentials
+        payload = verify_token(token)
+        
+        if payload is None:
+            return None
+        
+        user_id = payload.get("sub")
+        if user_id is None:
+            return None
+        
+        user = db.query(models.User).filter(models.User.id == user_id).first()
+        return user
+    except:
+        return None
 
 @router.get("/{project_id}/summary")
-def get_summary(project_id: int, days: int = 30, db: Session = Depends(get_db)):
+def get_summary(
+    project_id: int, 
+    days: int = 30, 
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional)
+):
+    # Check if project exists and user has access
+    project = db.query(models.Project).filter(models.Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # If user is authenticated, check if they own the project
+    if current_user and project.user_id and project.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     # Total visits
     total_visits = db.query(models.Visit).filter(models.Visit.project_id == project_id).count()
     
@@ -136,6 +177,126 @@ def get_summary(project_id: int, days: int = 30, db: Session = Depends(get_db)):
         "top_sources": [{"source": s[0], "count": s[1]} for s in top_sources],
         "device_stats": {d[0]: d[1] for d in device_stats if d[0]}
     }
+
+@router.get("/{project_id}/hourly/{date}")
+def get_hourly_analytics(
+    project_id: int, 
+    date: str,
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional)
+):
+    """Get hourly analytics for a specific date"""
+    
+    # Check if project exists and user has access
+    project = db.query(models.Project).filter(models.Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # If user is authenticated, check if they own the project
+    if current_user and project.user_id and project.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    try:
+        # Parse the date string - handle different formats
+        from urllib.parse import unquote
+        decoded_date = unquote(date)
+        
+        # Try different date formats
+        date_formats = [
+            "%a, %d %b %Y",  # "Mon, 16 Dec 2024"
+            "%Y-%m-%d",      # "2024-12-16"
+            "%d %b %Y",      # "16 Dec 2024"
+            "%d/%m/%Y",      # "16/12/2024"
+        ]
+        
+        parsed_date = None
+        for fmt in date_formats:
+            try:
+                parsed_date = datetime.strptime(decoded_date, fmt).date()
+                break
+            except ValueError:
+                continue
+        
+        if not parsed_date:
+            raise HTTPException(status_code=400, detail=f"Invalid date format: {decoded_date}")
+        
+        # Get start and end of the day
+        day_start = datetime.combine(parsed_date, datetime.min.time())
+        day_end = datetime.combine(parsed_date, datetime.max.time())
+        
+        print(f" Getting hourly data for {parsed_date} ({day_start} to {day_end})")
+        
+        # Query hourly data using SQL EXTRACT function
+        from sqlalchemy import extract, case
+        
+        hourly_data = db.query(
+            extract('hour', models.Visit.visited_at).label('hour'),
+            func.count(models.Visit.id).label('page_views'),
+            func.count(func.distinct(models.Visit.visitor_id)).label('unique_visits'),
+            func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits')
+        ).filter(
+            models.Visit.project_id == project_id,
+            models.Visit.visited_at >= day_start,
+            models.Visit.visited_at <= day_end
+        ).group_by('hour').all()
+        
+        print(f" Found {len(hourly_data)} hours with data")
+        
+        # Create a dict for quick lookup
+        hourly_dict = {
+            int(row.hour): {
+                'page_views': row.page_views,
+                'unique_visits': row.unique_visits,
+                'first_time_visits': row.first_time_visits or 0
+            }
+            for row in hourly_data
+        }
+        
+        # Build complete 24-hour array
+        hourly_stats = []
+        for hour in range(24):
+            hour_str = f"{hour:02d}:00"
+            time_range = f"{hour:02d}:00-{hour:02d}:59"
+            
+            stats = hourly_dict.get(hour, {'page_views': 0, 'unique_visits': 0, 'first_time_visits': 0})
+            
+            hourly_stats.append({
+                "date": hour_str,
+                "timeRange": time_range,
+                "page_views": stats['page_views'],
+                "unique_visits": stats['unique_visits'],
+                "first_time_visits": stats['first_time_visits'],
+                "returning_visits": stats['unique_visits'] - stats['first_time_visits']
+            })
+        
+        # Calculate totals
+        totals = {
+            'page_views': sum(h['page_views'] for h in hourly_stats),
+            'unique_visits': sum(h['unique_visits'] for h in hourly_stats),
+            'first_time_visits': sum(h['first_time_visits'] for h in hourly_stats),
+            'returning_visits': sum(h['returning_visits'] for h in hourly_stats)
+        }
+        
+        # Calculate averages
+        averages = {
+            'page_views': round(totals['page_views'] / 24, 1),
+            'unique_visits': round(totals['unique_visits'] / 24, 1),
+            'first_time_visits': round(totals['first_time_visits'] / 24, 1),
+            'returning_visits': round(totals['returning_visits'] / 24, 1)
+        }
+        
+        print(f" Hourly analytics calculated - Totals: {totals}")
+        
+        return {
+            "date": decoded_date,
+            "hourly_stats": hourly_stats,
+            "totals": totals,
+            "averages": averages
+        }
+        
+    except Exception as e:
+        print(f" Error in hourly analytics: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing hourly data: {str(e)}")
 
 @router.get("/test-location/{ip_address}")
 def test_location(ip_address: str):

@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from database import engine, get_db, Base
-from routers import projects, analytics, visitors, pages, traffic_sources, reports
+from routers import projects, analytics, visitors, pages, traffic_sources, reports, auth
 import models
 import os
 
@@ -28,6 +28,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(projects.router, prefix="/api/projects", tags=["Projects"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
 app.include_router(visitors.router, prefix="/api/visitors", tags=["Visitors"])
@@ -46,3 +47,7 @@ def health_check():
 @app.get("/api/analytics.js")
 def serve_analytics_js():
     return FileResponse("analytics.js", media_type="application/javascript")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

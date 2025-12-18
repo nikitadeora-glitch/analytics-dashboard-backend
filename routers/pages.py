@@ -187,13 +187,21 @@ def get_page_activity(project_id: int, hours: int = 24, db: Session = Depends(ge
     
     time_ago = datetime.utcnow() - timedelta(hours=hours)
     
-    # SQLite compatible - use strftime instead of date_trunc
-    activity = db.query(
-        func.strftime('%Y-%m-%d %H:00:00', models.PageView.viewed_at).label('hour'),
+    activity = db.query  (
+        func.date_trunc('hour', models.PageView.viewed_at).label('hour'),
         func.count(models.PageView.id).label('views')
     ).join(models.Visit).filter(
         models.Visit.project_id == project_id,
         models.PageView.viewed_at >= time_ago
-    ).group_by('hour').order_by('hour').all()
+    ).group_by(
+        func.date_trunc('hour', models.PageView.viewed_at)
+    ).order_by('hour').all()
+
     
-    return [{"hour": str(a[0]), "views": a[1]} for a in activity]
+    return [
+        {
+            "hour": a[0].strftime("%Y-%m-%d %H:%M:%S") if a[0] else None,
+            "views": a[1]
+        }
+        for a in activity
+    ]

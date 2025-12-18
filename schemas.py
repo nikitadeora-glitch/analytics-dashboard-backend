@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from datetime import datetime
 from typing import Optional, List
 
@@ -79,3 +79,38 @@ class TrafficSourceStats(BaseModel):
     source_name: str
     visit_count: int
     percentage: float
+
+# Authentication Schemas
+class UserCreate(BaseModel):
+    fullName: str
+    email: EmailStr
+    companyName: str
+    password: str
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+class UserResponse(BaseModel):
+    id: int
+    full_name: str
+    email: str
+    company_name: str
+    is_verified: bool
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class Token(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str
+    user: dict
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    password: str
