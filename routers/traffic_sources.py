@@ -86,6 +86,13 @@ def get_traffic_sources(project_id: int, db: Session = Depends(get_db)):
         traceback.print_exc()
         return []
 
+@router.get("/{project_id}/traffic-overview")
+def get_traffic_overview(project_id: int, db: Session = Depends(get_db)):
+    """Dedicated endpoint for Traffic Sources Page"""
+    # Reuse the same logic but exposed on a specific route for the page
+    # This allows future customization specifically for this page without breaking others
+    return get_traffic_sources(project_id, db)
+
 @router.get("/{project_id}/keywords")
 def get_keywords(project_id: int, limit: int = 20, db: Session = Depends(get_db)):
     keywords = db.query(models.Keyword).filter(

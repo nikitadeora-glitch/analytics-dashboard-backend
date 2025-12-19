@@ -65,6 +65,12 @@ def get_visitor_activity(project_id: int, limit: int = 50, db: Session = Depends
     
     return result
 
+@router.get("/{project_id}/activity-view")
+def get_visitor_activity_view(project_id: int, limit: int = 50, db: Session = Depends(get_db)):
+    """Dedicated endpoint for Visitor Activity Page"""
+    # Simply calls the existing logic for now, but provides a unique route for the page
+    return get_visitor_activity(project_id, limit, db)
+
 @router.get("/{project_id}/path/{visitor_id}")
 def get_visitor_path(project_id: int, visitor_id: str, db: Session = Depends(get_db)):
     visit = db.query(models.Visit).filter(
@@ -247,6 +253,97 @@ def get_visitor_map(project_id: int, db: Session = Depends(get_db)):
         "longitude": loc[4],
         "count": loc[5]
     } for loc in locations]
+
+@router.get("/{project_id}/map-view")
+def get_map_view(
+    project_id: int, 
+    days: int = 30, 
+    db: Session = Depends(get_db)
+):
+    """
+    Dedicated endpoint for Visitor Map Page.
+    Supports filtering by days and returns aggregated location data.
+    """
+    start_date = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
+    
+    locations = db.query(
+        models.Visit.country,
+        models.Visit.state,
+        models.Visit.city,
+        models.Visit.latitude,
+        models.Visit.longitude,
+        func.count(models.Visit.id).label('count')
+    ).filter(
+        models.Visit.project_id == project_id,
+        models.Visit.latitude.isnot(None),
+        models.Visit.visited_at >= start_date
+    ).group_by(
+        models.Visit.country,
+        models.Visit.state,
+        models.Visit.city,
+        models.Visit.latitude,
+        models.Visit.longitude
+    ).all()
+    
+    return [{
+        "country": loc[0],
+        "state": loc[1],
+        "city": loc[2],
+        "latitude": loc[3],
+        "longitude": loc[4],
+        "count": loc[5]
+    } for loc in locations]
+
+@router.get("/{project_id}/visitors-at-location")
+def get_visitors_at_location(
+    project_id: int,
+    lat: float,
+    lng: float,
+    days: int = 30,
+    db: Session = Depends(get_db)
+):
+    """
+    Fetch detailed visitor info for a specific map pin (location).
+    Results are ordered by most recent visit.
+    """
+    start_date = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
+    
+    # Use strict float matching since we pass back values we got from the DB.
+    # In production, a small epsilon correlation might be safer.
+    visits = db.query(models.Visit).filter(
+        models.Visit.project_id == project_id,
+        models.Visit.latitude == lat,
+        models.Visit.longitude == lng,
+        models.Visit.visited_at >= start_date
+    ).order_by(desc(models.Visit.visited_at)).limit(50).all()
+    
+    result = []
+    for v in visits:
+        # Count returning visits
+        returning_count = db.query(models.Visit).filter(
+            models.Visit.project_id == project_id,
+            models.Visit.visitor_id == v.visitor_id
+        ).count()
+        
+        result.append({
+            "visitor_id": v.visitor_id,
+            "ip_address": v.ip_address,
+            "isp": v.isp,
+            "visited_at": v.visited_at,
+            "session_duration": v.session_duration,
+            "browser": v.browser,
+            "os": v.os,
+            "screen_resolution": v.screen_resolution,
+            "city": v.city,
+            "state": v.state,
+            "country": v.country,
+            "returning_visits": returning_count,
+            "entry_page": v.entry_page,
+            "exit_page": v.exit_page,
+            "referrer": v.referrer
+        })
+    
+    return result
 
 @router.post("/{project_id}/bulk-sessions")
 def get_bulk_visitor_sessions(project_id: int, visitor_ids: list[str], db: Session = Depends(get_db)):
