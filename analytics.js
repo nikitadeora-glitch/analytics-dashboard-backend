@@ -34,10 +34,25 @@
   const projectId = currentScript?.getAttribute('data-project-id');
 
   // Get API URL (default: same domain as website)
-  const apiUrl = currentScript?.getAttribute('data-api-url') ||
-    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-      ? 'http://127.0.0.1:8000/api'  // Local development
-      : window.location.origin + '/api');  // Production
+  // Get API URL (Smart Detection)
+  // 1. Prefer explicit data-api-url attribute
+  // 2. If not set, derive from the script's own source URL (e.g. if loaded from http://api.com/script.js, use http://api.com/api/)
+  // 3. Fallback to localhost for dev
+  let defaultUrl;
+  if (currentScript?.src && currentScript.src.startsWith('http')) {
+    try {
+      const scriptUrl = new URL(currentScript.src);
+      // If script is at /api/analytics.js, base is /api/
+      // We assume the script is served from the API server
+      defaultUrl = scriptUrl.origin + '/api/';
+    } catch (e) {
+      defaultUrl = 'http://127.0.0.1:8000/api/';
+    }
+  } else {
+    defaultUrl = 'http://127.0.0.1:8000/api/';
+  }
+
+  const apiUrl = currentScript?.getAttribute('data-api-url') || defaultUrl;
 
   // Debug mode
   const debug = currentScript?.getAttribute('data-debug') === 'true';

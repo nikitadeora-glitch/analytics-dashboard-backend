@@ -178,6 +178,98 @@ def get_summary(
         "device_stats": {d[0]: d[1] for d in device_stats if d[0]}
     }
 
+@router.get("/{project_id}/summary-view")
+def get_summary_view(
+    project_id: int, 
+    days: int = 30, 
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional)
+):
+    """Specific API for Summary Page - Returns only necessary stats"""
+    # Check if project exists and user has access
+    project = db.query(models.Project).filter(models.Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # If user is authenticated, check if they own the project
+    if current_user and project.user_id and project.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Total visits
+    total_visits = db.query(models.Visit).filter(models.Visit.project_id == project_id).count()
+    
+    # Unique visitors
+    unique_visitors = db.query(func.count(func.distinct(models.Visit.visitor_id))).filter(
+        models.Visit.project_id == project_id
+    ).scalar()
+    
+    # Live visitors (last 5 minutes)
+    five_min_ago = datetime.utcnow() - timedelta(minutes=5)
+    live_visitors = db.query(func.count(func.distinct(models.Visit.visitor_id))).filter(
+        models.Visit.project_id == project_id,
+        models.Visit.visited_at >= five_min_ago
+    ).scalar()
+    
+    # Daily stats
+    from sqlalchemy import case, cast, Date
+    
+    start_date = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
+    
+    # Single query to get all stats grouped by date
+    daily_data = db.query(
+        cast(models.Visit.visited_at, Date).label('visit_date'),
+        func.count(models.Visit.id).label('page_views'),
+        func.count(func.distinct(models.Visit.visitor_id)).label('unique_visits'),
+        func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits')
+    ).filter(
+        models.Visit.project_id == project_id,
+        models.Visit.visited_at >= start_date
+    ).group_by('visit_date').all()
+    
+    stats_dict = {
+        row.visit_date: {
+            'page_views': row.page_views,
+            'unique_visits': row.unique_visits,
+            'first_time_visits': row.first_time_visits or 0
+        }
+        for row in daily_data
+    }
+    
+    daily_stats = []
+    for i in range(days - 1, -1, -1):
+        day_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=i)
+        day_date = day_start.date()
+        
+        stats = stats_dict.get(day_date, {'page_views': 0, 'unique_visits': 0, 'first_time_visits': 0})
+        
+        daily_stats.append({
+            "date": day_start.strftime("%a, %d %b %Y"),
+            "page_views": stats['page_views'],
+            "unique_visits": stats['unique_visits'],
+            "first_time_visits": stats['first_time_visits'],
+            "returning_visits": stats['unique_visits'] - stats['first_time_visits']
+        })
+    
+    # Calculate averages
+    total_days = len(daily_stats)
+    avg_page_views = sum(d["page_views"] for d in daily_stats) / total_days if total_days > 0 else 0
+    avg_unique_visits = sum(d["unique_visits"] for d in daily_stats) / total_days if total_days > 0 else 0
+    avg_first_time = sum(d["first_time_visits"] for d in daily_stats) / total_days if total_days > 0 else 0
+    avg_returning = sum(d["returning_visits"] for d in daily_stats) / total_days if total_days > 0 else 0
+    
+    return {
+        "total_visits": total_visits,
+        "unique_visitors": unique_visitors,
+        "live_visitors": live_visitors,
+        "daily_stats": daily_stats,
+        "averages": {
+            "page_views": round(avg_page_views, 1),
+            "unique_visits": round(avg_unique_visits, 1),
+            "first_time_visits": round(avg_first_time, 1),
+            "returning_visits": round(avg_returning, 1)
+        }
+    }
+
 @router.get("/{project_id}/hourly/{date}")
 def get_hourly_analytics(
     project_id: int, 
