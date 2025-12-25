@@ -5,16 +5,18 @@ import models
 from datetime import datetime, timedelta
 import csv
 import io
+import utils
 
 router = APIRouter()
 
 @router.get("/{project_id}/export/csv")
 def export_csv(project_id: int, days: int = 30, db: Session = Depends(get_db)):
-    time_ago = datetime.utcnow() - timedelta(days=days)
+    start_date_ist = utils.get_ist_start_of_day(days - 1)
+    start_date_utc = utils.ist_to_utc(start_date_ist)
     
     visits = db.query(models.Visit).filter(
         models.Visit.project_id == project_id,
-        models.Visit.visited_at >= time_ago
+        models.Visit.visited_at >= start_date_utc
     ).all()
     
     output = io.StringIO()

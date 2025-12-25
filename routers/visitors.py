@@ -4,6 +4,7 @@ from sqlalchemy import desc, func
 from database import get_db
 import models
 from datetime import datetime, timedelta
+import utils
 
 router = APIRouter()
 
@@ -264,7 +265,8 @@ def get_map_view(
     Dedicated endpoint for Visitor Map Page.
     Supports filtering by days and returns aggregated location data.
     """
-    start_date = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
+    start_date_ist = utils.get_ist_start_of_day(days - 1)
+    start_date_utc = utils.ist_to_utc(start_date_ist)
     
     locations = db.query(
         models.Visit.country,
@@ -276,7 +278,7 @@ def get_map_view(
     ).filter(
         models.Visit.project_id == project_id,
         models.Visit.latitude.isnot(None),
-        models.Visit.visited_at >= start_date
+        models.Visit.visited_at >= start_date_utc
     ).group_by(
         models.Visit.country,
         models.Visit.state,
@@ -306,7 +308,8 @@ def get_visitors_at_location(
     Fetch detailed visitor info for a specific map pin (location).
     Results are ordered by most recent visit.
     """
-    start_date = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
+    start_date_ist = utils.get_ist_start_of_day(days - 1)
+    start_date_utc = utils.ist_to_utc(start_date_ist)
     
     # Use strict float matching since we pass back values we got from the DB.
     # In production, a small epsilon correlation might be safer.
@@ -314,7 +317,7 @@ def get_visitors_at_location(
         models.Visit.project_id == project_id,
         models.Visit.latitude == lat,
         models.Visit.longitude == lng,
-        models.Visit.visited_at >= start_date
+        models.Visit.visited_at >= start_date_utc
     ).order_by(desc(models.Visit.visited_at)).limit(50).all()
     
     result = []
