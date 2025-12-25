@@ -6,6 +6,7 @@ import models, schemas
 from datetime import datetime, timedelta
 from typing import Optional
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import utils
 
 router = APIRouter()
 security = HTTPBearer(auto_error=False)  # Make authentication optional
@@ -69,18 +70,23 @@ def get_summary(
     # Daily stats for specified number of days - OPTIMIZED
     from sqlalchemy import case, cast, Date
     
-    start_date = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
+    # IST calculation
+    start_date_ist = utils.get_ist_start_of_day(days - 1)
+    start_date_utc = utils.ist_to_utc(start_date_ist)
+    
+    dialect_name = db.bind.dialect.name
+    ist_date_expr = utils.get_ist_date_expr(models.Visit.visited_at, dialect_name)
     
     # Single query to get all stats grouped by date
     daily_data = db.query(
-        cast(models.Visit.visited_at, Date).label('visit_date'),
+        ist_date_expr.label('visit_date'),
         func.count(models.Visit.id).label('page_views'),
         func.count(func.distinct(models.Visit.visitor_id)).label('unique_visits'),
         func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits')
     ).filter(
         models.Visit.project_id == project_id,
-        models.Visit.visited_at >= start_date
-    ).group_by('visit_date').all()
+        models.Visit.visited_at >= start_date_utc
+    ).group_by(ist_date_expr).all()
     
     # Create a dict for quick lookup
     stats_dict = {
@@ -95,13 +101,18 @@ def get_summary(
     # Build daily stats array with all days (including days with no data)
     daily_stats = []
     for i in range(days - 1, -1, -1):
-        day_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=i)
-        day_date = day_start.date()
+        day_start_ist = utils.get_ist_start_of_day(i)
+        day_date = day_start_ist.date()
         
-        stats = stats_dict.get(day_date, {'page_views': 0, 'unique_visits': 0, 'first_time_visits': 0})
+        # SQL returns date as string in some dialects, handle conversion if needed
+        # stats_dict keys are date objects if cast(..., Date) worked correctly
+        stats = stats_dict.get(day_date)
+        if stats is None:
+            # Fallback for string keys
+            stats = stats_dict.get(str(day_date), {'page_views': 0, 'unique_visits': 0, 'first_time_visits': 0})
         
         daily_stats.append({
-            "date": day_start.strftime("%a, %d %b %Y"),
+            "date": day_start_ist.strftime("%a, %d %b %Y"),
             "page_views": stats['page_views'],
             "unique_visits": stats['unique_visits'],
             "first_time_visits": stats['first_time_visits'],
@@ -110,19 +121,27 @@ def get_summary(
     
     # Get ALL historical data (no date limit)
     all_time_data = db.query(
-        cast(models.Visit.visited_at, Date).label('visit_date'),
+        ist_date_expr.label('visit_date'),
         func.count(models.Visit.id).label('page_views'),
         func.count(func.distinct(models.Visit.visitor_id)).label('unique_visits'),
         func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits')
     ).filter(
         models.Visit.project_id == project_id
-    ).group_by('visit_date').order_by('visit_date').all()
+    ).group_by(ist_date_expr).order_by(ist_date_expr).all()
     
     # Build all-time daily stats
     all_daily_stats = []
     for row in all_time_data:
+        # Handle both date objects and strings
+        row_date = row.visit_date
+        if isinstance(row_date, str):
+            try:
+                row_date = datetime.strptime(row_date, "%Y-%m-%d").date()
+            except:
+                pass
+                
         all_daily_stats.append({
-            "date": row.visit_date.strftime("%a, %d %b %Y"),
+            "date": row_date.strftime("%a, %d %b %Y") if hasattr(row_date, 'strftime') else str(row_date),
             "page_views": row.page_views,
             "unique_visits": row.unique_visits,
             "first_time_visits": row.first_time_visits or 0,
@@ -213,18 +232,23 @@ def get_summary_view(
     # Daily stats
     from sqlalchemy import case, cast, Date
     
-    start_date = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
+    # IST calculation
+    start_date_ist = utils.get_ist_start_of_day(days - 1)
+    start_date_utc = utils.ist_to_utc(start_date_ist)
+    
+    dialect_name = db.bind.dialect.name
+    ist_date_expr = utils.get_ist_date_expr(models.Visit.visited_at, dialect_name)
     
     # Single query to get all stats grouped by date
     daily_data = db.query(
-        cast(models.Visit.visited_at, Date).label('visit_date'),
+        ist_date_expr.label('visit_date'),
         func.count(models.Visit.id).label('page_views'),
         func.count(func.distinct(models.Visit.visitor_id)).label('unique_visits'),
         func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits')
     ).filter(
         models.Visit.project_id == project_id,
-        models.Visit.visited_at >= start_date
-    ).group_by('visit_date').all()
+        models.Visit.visited_at >= start_date_utc
+    ).group_by(ist_date_expr).all()
     
     stats_dict = {
         row.visit_date: {
@@ -237,13 +261,15 @@ def get_summary_view(
     
     daily_stats = []
     for i in range(days - 1, -1, -1):
-        day_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=i)
-        day_date = day_start.date()
+        day_start_ist = utils.get_ist_start_of_day(i)
+        day_date = day_start_ist.date()
         
-        stats = stats_dict.get(day_date, {'page_views': 0, 'unique_visits': 0, 'first_time_visits': 0})
+        stats = stats_dict.get(day_date)
+        if stats is None:
+            stats = stats_dict.get(str(day_date), {'page_views': 0, 'unique_visits': 0, 'first_time_visits': 0})
         
         daily_stats.append({
-            "date": day_start.strftime("%a, %d %b %Y"),
+            "date": day_start_ist.strftime("%a, %d %b %Y"),
             "page_views": stats['page_views'],
             "unique_visits": stats['unique_visits'],
             "first_time_visits": stats['first_time_visits'],
@@ -312,24 +338,28 @@ def get_hourly_analytics(
         if not parsed_date:
             raise HTTPException(status_code=400, detail=f"Invalid date format: {decoded_date}")
         
-        # Get start and end of the day
-        day_start = datetime.combine(parsed_date, datetime.min.time())
-        day_end = datetime.combine(parsed_date, datetime.max.time())
+        # Get start and end of the day in IST then convert to UTC for filtering
+        day_start_ist = datetime.combine(parsed_date, datetime.min.time())
+        day_end_ist = datetime.combine(parsed_date, datetime.max.time())
+        day_start_utc = utils.ist_to_utc(day_start_ist)
+        day_end_utc = utils.ist_to_utc(day_end_ist)
         
-        print(f" Getting hourly data for {parsed_date} ({day_start} to {day_end})")
+        print(f" Getting hourly data for {parsed_date} IST ({day_start_utc} to {day_end_utc} UTC)")
         
-        # Query hourly data using SQL EXTRACT function
+        # Query hourly data using SQL
         from sqlalchemy import extract, case
+        dialect_name = db.bind.dialect.name
+        ist_hour_expr = utils.get_ist_hour_expr(models.Visit.visited_at, dialect_name)
         
         hourly_data = db.query(
-            extract('hour', models.Visit.visited_at).label('hour'),
+            ist_hour_expr.label('hour'),
             func.count(models.Visit.id).label('page_views'),
             func.count(func.distinct(models.Visit.visitor_id)).label('unique_visits'),
             func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits')
         ).filter(
             models.Visit.project_id == project_id,
-            models.Visit.visited_at >= day_start,
-            models.Visit.visited_at <= day_end
+            models.Visit.visited_at >= day_start_utc,
+            models.Visit.visited_at <= day_end_utc
         ).group_by('hour').all()
         
         print(f" Found {len(hourly_data)} hours with data")

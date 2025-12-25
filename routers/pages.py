@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc, and_
 from database import get_db
 import models
+import utils
 
 router = APIRouter()
 
@@ -223,20 +224,23 @@ def get_page_activity(project_id: int, hours: int = 24, db: Session = Depends(ge
     
     time_ago = datetime.utcnow() - timedelta(hours=hours)
     
-    activity = db.query  (
-        func.date_trunc('hour', models.PageView.viewed_at).label('hour'),
+    dialect_name = db.bind.dialect.name
+    hour_expr = utils.get_truncated_hour_expr(models.PageView.viewed_at, dialect_name)
+    
+    activity = db.query(
+        hour_expr.label('hour'),
         func.count(models.PageView.id).label('views')
     ).join(models.Visit).filter(
         models.Visit.project_id == project_id,
         models.PageView.viewed_at >= time_ago
     ).group_by(
-        func.date_trunc('hour', models.PageView.viewed_at)
-    ).order_by('hour').all()
+        hour_expr
+    ).order_by(hour_expr).all()
 
     
     return [
         {
-            "hour": a[0].strftime("%Y-%m-%d %H:%M:%S") if a[0] else None,
+            "hour": a[0] if isinstance(a[0], str) else a[0].strftime("%Y-%m-%d %H:%M:%S") if a[0] else None,
             "views": a[1]
         }
         for a in activity
