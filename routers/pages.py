@@ -8,7 +8,7 @@ import utils
 router = APIRouter()
 
 @router.get("/{project_id}/most-visited")
-def get_most_visited_pages(project_id: int, limit: int = 100, db: Session = Depends(get_db)):
+def get_most_visited_pages(project_id: int, limit: int = 1000, db: Session = Depends(get_db)):
     """Get all visited pages sorted by total views (Top Pages), grouped by Base URL"""
     # Group by Base URL (removing query params)
     base_url_exp = func.split_part(models.PageView.url, '?', 1)
@@ -81,7 +81,7 @@ def get_most_visited_pages(project_id: int, limit: int = 100, db: Session = Depe
     return result
 
 @router.get("/{project_id}/entry-pages")
-def get_entry_pages(project_id: int, limit: int = 100, db: Session = Depends(get_db)):
+def get_entry_pages(project_id: int, limit: int = 1000, db: Session = Depends(get_db)):
     """Get pages where visitors first land (entry pages), grouped by Base URL"""
     base_url_exp = func.split_part(models.Visit.entry_page, '?', 1)
 
@@ -154,7 +154,7 @@ def get_entry_pages(project_id: int, limit: int = 100, db: Session = Depends(get
     return result
 
 @router.get("/{project_id}/exit-pages")
-def get_exit_pages(project_id: int, limit: int = 100, db: Session = Depends(get_db)):
+def get_exit_pages(project_id: int, limit: int = 1000, db: Session = Depends(get_db)):
     """Get pages where visitors leave the site (exit pages), grouped by Base URL"""
     base_url_exp = func.split_part(models.Visit.exit_page, '?', 1)
 

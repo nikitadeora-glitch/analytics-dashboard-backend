@@ -73,6 +73,25 @@
     }
   }
 
+  function isLikelyHuman() {
+    try {
+      // Only block obvious automation tools
+      if (navigator.webdriver) return false;
+
+      const ua = (navigator.userAgent || '').toLowerCase();
+      
+      // Block clear bot patterns only
+      if (/(bot|spider|crawl|slurp|headless|lighthouse|puppeteer|playwright|selenium|phantom|python-requests|curl|wget)/i.test(ua)) {
+        return false;
+      }
+
+      // Allow most browsers - be less strict
+      return true;
+    } catch (e) {
+      return true; // Allow on errors to avoid blocking legit users
+    }
+  }
+
   function getVisitorId() {
     let id = localStorage.getItem('visitor_id');
     if (!id) {
@@ -434,6 +453,11 @@
     if (!CONFIG.projectId) {
       console.error('[Analytics] ❌ Project ID not set! Add data-project-id="YOUR_ID" to script tag');
       console.error('[Analytics] Example: <script src="analytics.js" data-project-id="1"></script>');
+      return;
+    }
+
+    if (!isLikelyHuman()) {
+      log('🤖 Likely automated traffic, skipping analytics');
       return;
     }
 
