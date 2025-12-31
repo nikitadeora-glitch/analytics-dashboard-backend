@@ -9,7 +9,7 @@ import utils
 router = APIRouter()
 
 @router.get("/{project_id}/activity")
-def get_visitor_activity(project_id: int, limit: int = 50, db: Session = Depends(get_db)):
+def get_visitor_activity(project_id: int, limit: int = 1000, db: Session = Depends(get_db)):
     visits = db.query(models.Visit).filter(
         models.Visit.project_id == project_id
     ).order_by(desc(models.Visit.visited_at)).limit(limit).all()
@@ -67,7 +67,7 @@ def get_visitor_activity(project_id: int, limit: int = 50, db: Session = Depends
     return result
 
 @router.get("/{project_id}/activity-view")
-def get_visitor_activity_view(project_id: int, limit: int = 50, db: Session = Depends(get_db)):
+def get_visitor_activity_view(project_id: int, limit: int = 1000, db: Session = Depends(get_db)):
     """Dedicated endpoint for Visitor Activity Page"""
     # Simply calls the existing logic for now, but provides a unique route for the page
     return get_visitor_activity(project_id, limit, db)
@@ -318,7 +318,7 @@ def get_visitors_at_location(
         models.Visit.latitude == lat,
         models.Visit.longitude == lng,
         models.Visit.visited_at >= start_date_utc
-    ).order_by(desc(models.Visit.visited_at)).limit(50).all()
+    ).order_by(desc(models.Visit.visited_at)).limit(1000).all()
     
     result = []
     for v in visits:
@@ -354,8 +354,8 @@ def get_bulk_visitor_sessions(project_id: int, visitor_ids: list[str], db: Sessi
     if not visitor_ids or len(visitor_ids) == 0:
         return {}
     
-    # Limit to prevent abuse
-    visitor_ids = visitor_ids[:10]
+    # Limit to prevent abuse - Removed as per user request for full data
+    # visitor_ids = visitor_ids[:100]
     
     # Get all visits for these visitors in one query
     visits = db.query(models.Visit).filter(

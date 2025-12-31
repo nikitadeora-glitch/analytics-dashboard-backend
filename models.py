@@ -24,10 +24,12 @@ class PasswordReset(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
+    email = Column(String, nullable=False)  # Add email field
     token = Column(String, unique=True, nullable=False)
     expires_at = Column(DateTime, nullable=False)
     used = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+    used_at = Column(DateTime, nullable=True)  # Track when the token was used
     
     user = relationship("User", back_populates="password_resets")
 

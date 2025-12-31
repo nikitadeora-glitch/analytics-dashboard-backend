@@ -7,9 +7,51 @@ from datetime import datetime, timedelta
 from typing import Optional
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import utils
+import re
 
 router = APIRouter()
 security = HTTPBearer(auto_error=False)  # Make authentication optional
+
+_BOT_UA_RE = re.compile(
+    r"(bot|spider|crawl|slurp|mediapartners-google|adsbot-google|googlebot|bingbot|bingpreview|msnbot|yandex|baidu|duckduckbot|ahrefs|semrush|mj12|dotbot|bytespider|facebookexternalhit|twitterbot|linkedinbot|whatsapp|telegram|discordbot|slackbot|curl|wget|python-requests|aiohttp|httpclient|libwww-perl|scrapy|selenium|puppeteer|playwright|headless|lighthouse|uptimerobot)",
+    re.IGNORECASE,
+)
+
+
+def _is_probable_bot_request(request: Request) -> bool:
+    try:
+        user_agent = (request.headers.get("user-agent") or "").strip()
+        
+        # Block obvious bots by UA pattern
+        if _BOT_UA_RE.search(user_agent):
+            return True
+
+        # Only block scripts/tools that send JSON without any browser headers
+        accept = request.headers.get("accept") or ""
+        accept_language = request.headers.get("accept-language")
+        sec_fetch_site = request.headers.get("sec-fetch-site")
+        sec_ch_ua = request.headers.get("sec-ch-ua")
+
+        # Block only if it's clearly a script (JSON accept + no browser headers)
+        if ("application/json" in accept and 
+            not accept_language and 
+            not sec_ch_ua and 
+            sec_fetch_site is None):
+            return True
+
+        return False
+    except Exception:
+        return False  # Allow on errors to avoid blocking legit users
+
+
+def _log_ignored(request: Request, reason: str) -> None:
+    try:
+        ip = getattr(getattr(request, "client", None), "host", None)
+        ua = (request.headers.get("user-agent") or "").strip()
+        path = getattr(getattr(request, "url", None), "path", "")
+        print(f"[Analytics] Ignored bot traffic ({reason}) ip={ip} path={path} ua={ua}")
+    except Exception:
+        pass
 
 def get_current_user_optional(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
@@ -452,8 +494,14 @@ def test_location(ip_address: str):
         }
 
 @router.post("/{project_id}/pageview/{visit_id}")
-def track_pageview(project_id: int, visit_id: int, pageview: schemas.PageViewCreate, db: Session = Depends(get_db)):
+def track_pageview(project_id: int, visit_id: int, pageview: schemas.PageViewCreate, request: Request, db: Session = Depends(get_db)):
     """Track a page view within a visit"""
+
+    if _is_probable_bot_request(request):
+        _log_ignored(request, "pageview")
+        return {
+            "message": "Ignored"
+        }
     
     # Verify visit exists
     visit = db.query(models.Visit).filter(
@@ -504,8 +552,15 @@ def track_pageview(project_id: int, visit_id: int, pageview: schemas.PageViewCre
     }
 
 @router.put("/{project_id}/pageview/{visit_id}/update/{pageview_id}")
-def update_pageview_time(project_id: int, visit_id: int, pageview_id: int, data: dict, db: Session = Depends(get_db)):
+def update_pageview_time(project_id: int, visit_id: int, pageview_id: int, data: dict, request: Request, db: Session = Depends(get_db)):
     """Update time spent on a page view"""
+
+
+    if _is_probable_bot_request(request):
+        _log_ignored(request, "pageview_update")
+        return {
+            "message": "Ignored"
+        }
     
     # Find the page view
     pageview = db.query(models.PageView).join(models.Visit).filter(
@@ -529,8 +584,15 @@ def update_pageview_time(project_id: int, visit_id: int, pageview_id: int, data:
     }
 
 @router.post("/{project_id}/exit/{visit_id}")
-def track_exit(project_id: int, visit_id: int, exit_data: dict, db: Session = Depends(get_db)):
+def track_exit(project_id: int, visit_id: int, exit_data: dict, request: Request, db: Session = Depends(get_db)):
     """Track exit page and final time spent"""
+
+
+    if _is_probable_bot_request(request):
+        _log_ignored(request, "exit")
+        return {
+            "message": "Ignored"
+        }
     
     visit = db.query(models.Visit).filter(
         models.Visit.id == visit_id,
@@ -556,8 +618,15 @@ def track_exit(project_id: int, visit_id: int, exit_data: dict, db: Session = De
     }
 
 @router.post("/{project_id}/exit-link")
-def track_exit_link(project_id: int, link_data: dict, db: Session = Depends(get_db)):
+def track_exit_link(project_id: int, link_data: dict, request: Request, db: Session = Depends(get_db)):
     """Track external link clicks"""
+
+    
+    if _is_probable_bot_request(request):
+        _log_ignored(request, "exit_link")
+        return {
+            "message": "Ignored"
+        }
     
     url = link_data.get('url')
     from_page = link_data.get('from_page')
@@ -610,7 +679,17 @@ def track_exit_link(project_id: int, link_data: dict, db: Session = Depends(get_
 @router.post("/{project_id}/track")
 def track_visit(project_id: int, visit: schemas.VisitCreate, request: Request, db: Session = Depends(get_db)):
     import requests
-    
+
+
+    if _is_probable_bot_request(request):
+        _log_ignored(request, "track")
+        return {
+            "visit_id": None,
+            "message": "Ignored",
+            "is_duplicate": False,
+            "is_unique_visitor": False
+        }
+  
     # Check if project exists
     project = db.query(models.Project).filter(models.Project.id == project_id).first()
     if not project:

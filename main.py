@@ -16,12 +16,13 @@ origins = [
     "http://statecounterrahul.netlify.app",
     "https://seo.prpwebs.com",
     "http://seo.prpwebs.com",
-    "http://localhost:3000"
+    "http://localhost:3000",
+    "http://localhost:3001"
 ]
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -46,7 +47,15 @@ def health_check():
 
 @app.get("/api/analytics.js")
 def serve_analytics_js():
-    return FileResponse("analytics.js", media_type="application/javascript")
+    return FileResponse(
+        "analytics.js",
+        media_type="application/javascript",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 if __name__ == "__main__":
     import uvicorn
