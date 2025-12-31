@@ -1,8 +1,10 @@
+import pytest
 import asyncio
 import os
 from dotenv import load_dotenv
 from email_utils import send_email_async
 
+@pytest.mark.asyncio
 async def test_send_email():
     recipient = "nikita.deora@prpwebs.in"
     subject = "Test Email from State Counter"
