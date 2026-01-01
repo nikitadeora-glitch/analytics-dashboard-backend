@@ -16,8 +16,12 @@ origins = [
     "http://statecounterrahul.netlify.app",
     "https://seo.prpwebs.com",
     "http://seo.prpwebs.com",
+    "https://api.seo.growebs.com",
+    "http://api.seo.growebs.com",
     "http://localhost:3000",
-    "http://localhost:3001"
+    "http://localhost:3001",
+    "http://localhost:3000",
+    "http://localhost:3000"
 ]
 # CORS
 app.add_middleware(

@@ -80,14 +80,14 @@ def get_all_projects_stats(
     current_user: Optional[models.User] = Depends(get_current_user_optional)
 ):
     if current_user:
-        # Return stats for authenticated user's projects
+        # Return stats for authenticated user's projects ONLY
         projects = db.query(models.Project).filter(
             models.Project.is_active == True,
             models.Project.user_id == current_user.id
         ).all()
     else:
-        # Legacy support: return all projects stats
-        projects = db.query(models.Project).filter(models.Project.is_active == True).all()
+        # No user = no projects
+        return []
     
     if not projects:
         return []

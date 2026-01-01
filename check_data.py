@@ -1,9 +1,22 @@
 from database import SessionLocal
-from models import Visit, PageView
+from models import Visit, PageView, User, Project
 
 db = SessionLocal()
 
-# Check total counts
+# Check users
+print("=== USERS ===")
+users = db.query(User).all()
+print(f"Total users: {len(users)}")
+for user in users:
+    print(f"User {user.id}: {user.email} - {user.full_name}")
+
+print("\n=== PROJECTS ===")
+projects = db.query(Project).all()
+print(f"Total projects: {len(projects)}")
+for project in projects:
+    print(f"Project {project.id}: {project.name} (User: {project.user_id})")
+
+print("\n=== VISITS ===")
 total_visits = db.query(Visit).count()
 total_page_views = db.query(PageView).count()
 

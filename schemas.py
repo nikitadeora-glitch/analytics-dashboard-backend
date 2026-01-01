@@ -82,9 +82,9 @@ class TrafficSourceStats(BaseModel):
 
 # Authentication Schemas
 class UserCreate(BaseModel):
-    fullName: str
+    full_name: str
     email: EmailStr
-    companyName: str
+    company_name: Optional[str] = None  # Make optional
     password: str
 
 class UserLogin(BaseModel):

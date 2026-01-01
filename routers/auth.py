@@ -113,13 +113,14 @@ async def signup(user_data: UserCreate, background_tasks: BackgroundTasks, db: S
         email=user_data.email,
         hashed_password=hashed_password,
         full_name=user_data.full_name,
+        company_name=user_data.company_name if user_data.company_name else None,
         is_active=True
     )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
     
-    # Send welcome email in background
+    # Send welcome email in background (commented out for debugging)
     frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
     welcome_message = f"""
     <h2>Welcome to State Counter Analytics!</h2>
@@ -128,15 +129,31 @@ async def signup(user_data: UserCreate, background_tasks: BackgroundTasks, db: S
     <p>Start tracking your website's performance now by adding your first project.</p>
     <p>Best regards,<br>State Counter Team</p>
     """
+    # <p>Start tracking your website's performance now by adding your first project.</p>
+    # <p>Best regards,<br>State Counter Team</p>
+    # """
     
-    background_tasks.add_task(
-        send_email_async,
-        recipient=user_data.email,
-        subject="Welcome to State Counter Analytics",
-        body=welcome_message
-    )
+    # background_tasks.add_task(
+    #     send_email_async,
+    #         recipient=user_data.email,
+    #         subject="Welcome to State Counter Analytics",
+    #         body=welcome_message
+    # )
     
-    return {"message": "User created successfully"}
+    # Create tokens for auto-login
+    access_token = create_access_token(data={"sub": str(new_user.id)})
+    refresh_token = create_refresh_token(data={"sub": str(new_user.id)})
+    
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "user": {
+            "id": new_user.id,
+            "full_name": new_user.full_name,
+            "email": new_user.email
+        }
+    }
 
 @router.post("/login", response_model=Token)
 def login(credentials: UserLogin, db: Session = Depends(get_db)):
