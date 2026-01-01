@@ -5,11 +5,54 @@ from database import get_db
 import models
 from datetime import datetime, timedelta
 import utils
+from typing import Optional
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 router = APIRouter()
+security = HTTPBearer(auto_error=False)
+
+def get_current_user_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: Session = Depends(get_db)
+) -> Optional[models.User]:
+    """Get current user if authenticated, otherwise return None"""
+    if not credentials:
+        return None
+    
+    try:
+        from routers.auth import verify_token
+        token = credentials.credentials
+        payload = verify_token(token)
+        
+        if payload is None:
+            return None
+        
+        user_id = payload.get("sub")
+        if user_id is None:
+            return None
+        
+        user = db.query(models.User).filter(models.User.id == user_id).first()
+        return user
+    except:
+        return None
 
 @router.get("/{project_id}/activity")
-def get_visitor_activity(project_id: int, limit: int = 1000, db: Session = Depends(get_db)):
+def get_visitor_activity(
+    project_id: int, 
+    limit: int = 1000, 
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional)
+):
+    """Get visitor activity - if user is authenticated, check ownership, otherwise allow access (for backward compatibility)"""
+    # Check if project exists
+    project = db.query(models.Project).filter(models.Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # If user is authenticated, check if they own the project
+    if current_user and project.user_id and project.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     visits = db.query(models.Visit).filter(
         models.Visit.project_id == project_id
     ).order_by(desc(models.Visit.visited_at)).limit(limit).all()
