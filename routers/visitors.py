@@ -110,10 +110,15 @@ def get_visitor_activity(
     return result
 
 @router.get("/{project_id}/activity-view")
-def get_visitor_activity_view(project_id: int, limit: int = 1000, db: Session = Depends(get_db)):
+def get_visitor_activity_view(
+    project_id: int, 
+    limit: int = 1000, 
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional)
+):
     """Dedicated endpoint for Visitor Activity Page"""
     # Simply calls the existing logic for now, but provides a unique route for the page
-    return get_visitor_activity(project_id, limit, db)
+    return get_visitor_activity(project_id, limit, db, current_user)
 
 @router.get("/{project_id}/path/{visitor_id}")
 def get_visitor_path(project_id: int, visitor_id: str, db: Session = Depends(get_db)):
