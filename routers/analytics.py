@@ -17,32 +17,24 @@ _BOT_UA_RE = re.compile(
     re.IGNORECASE,
 )
 
-
 def _is_probable_bot_request(request: Request) -> bool:
-    try:
-        user_agent = (request.headers.get("user-agent") or "").strip()
-        
-        # Block obvious bots by UA pattern
-        if _BOT_UA_RE.search(user_agent):
-            return True
-
-        # Only block scripts/tools that send JSON without any browser headers
-        accept = request.headers.get("accept") or ""
-        accept_language = request.headers.get("accept-language")
-        sec_fetch_site = request.headers.get("sec-fetch-site")
-        sec_ch_ua = request.headers.get("sec-ch-ua")
-
-        # Block only if it's clearly a script (JSON accept + no browser headers)
-        if ("application/json" in accept and 
-            not accept_language and 
-            not sec_ch_ua and 
-            sec_fetch_site is None):
-            return True
-
+    # Block obvious bots by UA pattern
+    if _BOT_UA_RE.search(user_agent):
+        return True
+    
+    # Allow real browsers (substantial UA strings)
+    if len(user_agent) > 20:
         return False
-    except Exception:
-        return False  # Allow on errors to avoid blocking legit users
-
+    
+    # Block scripts with minimal headers
+    if ("application/json" in accept and 
+        not accept_language and 
+        not sec_ch_ua and 
+        len(user_agent) < 20):
+        return True
+    
+    return False
+  
 
 def _log_ignored(request: Request, reason: str) -> None:
     try:
