@@ -55,21 +55,53 @@ def create_project(
     return db_project
 
 @router.get("/", response_model=list[schemas.ProjectResponse])
-def get_projects(db: Session = Depends(get_db)):
-    return db.query(models.Project).filter(models.Project.is_active == True).all()
+def get_projects(
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional)
+):
+    """Get projects - if user is authenticated, show only their projects, otherwise show all (for backward compatibility)"""
+    if current_user:
+        # Authenticated user - show only their projects
+        return db.query(models.Project).filter(
+            models.Project.user_id == current_user.id,
+            models.Project.is_active == True
+        ).all()
+    else:
+        # Non-authenticated user - show all projects (backward compatibility)
+        return db.query(models.Project).filter(models.Project.is_active == True).all()
 
 @router.get("/{project_id}", response_model=schemas.ProjectResponse)
-def get_project(project_id: int, db: Session = Depends(get_db)):
+def get_project(
+    project_id: int, 
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional)
+):
+    """Get a specific project - if user is authenticated, check ownership, otherwise allow access (for backward compatibility)"""
     project = db.query(models.Project).filter(models.Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    
+    # If user is authenticated, check if they own the project
+    if current_user and project.user_id and project.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     return project
 
 @router.delete("/{project_id}")
-def delete_project(project_id: int, db: Session = Depends(get_db)):
+def delete_project(
+    project_id: int, 
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional)
+):
+    """Delete a project - if user is authenticated, check ownership, otherwise allow access (for backward compatibility)"""
     project = db.query(models.Project).filter(models.Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    
+    # If user is authenticated, check if they own the project
+    if current_user and project.user_id and project.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     project.is_active = False
     db.commit()
     return {"message": "Project deleted"}
@@ -79,15 +111,16 @@ def get_all_projects_stats(
     db: Session = Depends(get_db),
     current_user: Optional[models.User] = Depends(get_current_user_optional)
 ):
+    """Get stats for projects - if user is authenticated, show only their projects, otherwise show all (for backward compatibility)"""
     if current_user:
-        # Return stats for authenticated user's projects ONLY
+        # Authenticated user - show only their projects
         projects = db.query(models.Project).filter(
-            models.Project.is_active == True,
-            models.Project.user_id == current_user.id
+            models.Project.user_id == current_user.id,
+            models.Project.is_active == True
         ).all()
     else:
-        # No user = no projects
-        return []
+        # Non-authenticated user - show all projects (backward compatibility)
+        projects = db.query(models.Project).filter(models.Project.is_active == True).all()
     
     if not projects:
         return []
