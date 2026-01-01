@@ -45,6 +45,11 @@
       // If script is at /api/analytics.js, base is /api/
       // We assume the script is served from the API server
       defaultUrl = scriptUrl.origin + '/api/';
+      
+      // Special handling for known production domains
+      if (scriptUrl.hostname.includes('seo.prpwebs.com')) {
+        defaultUrl = 'https://api.seo.prpwebs.com/api/';
+      }
     } catch (e) {
       defaultUrl = 'http://127.0.0.1:8000/api/';
     }
@@ -56,6 +61,12 @@
 
   // Debug mode
   const debug = currentScript?.getAttribute('data-debug') === 'true';
+  
+  // Always log API URL detection for debugging
+  console.log('[Analytics] Script src:', currentScript?.src);
+  console.log('[Analytics] Default URL:', defaultUrl);
+  console.log('[Analytics] Final API URL:', apiUrl);
+  console.log('[Analytics] Project ID:', projectId);
 
   const CONFIG = {
     apiUrl: apiUrl,
