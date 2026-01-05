@@ -526,25 +526,17 @@ def google_login(data: GoogleLoginSchema, db: Session = Depends(get_db)):
                 detail="User creation failed"
             )
 
-    try:
-        payload = verify_google_token(data.id_token)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid Google token")
-
-    user = db.query(User).filter(User.email == payload["email"]).first()
-
-    if not user:
-        user = User(
-            full_name=payload["name"],
-            email=payload["email"],
-            google_id=payload["google_id"],
-            avatar=payload["picture"],
-            hashed_password="",  # No password for Google users
-            is_verified=True
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-
-    token = create_access_token({"user_id": user.id})
-    return {"access_token": token}
+    # 4️⃣ Create tokens
+    access_token = create_access_token(data={"sub": str(user.id)})
+    refresh_token = create_refresh_token(data={"sub": str(user.id)})
+    
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "full_name": user.full_name,
+            "email": user.email
+        }
+    }
