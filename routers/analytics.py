@@ -18,21 +18,7 @@ _BOT_UA_RE = re.compile(
 )
 
 def _is_probable_bot_request(request: Request) -> bool:
-    # Block obvious bots by UA pattern
-    if _BOT_UA_RE.search(user_agent):
-        return True
-    
-    # Allow real browsers (substantial UA strings)
-    if len(user_agent) > 20:
-        return False
-    
-    # Block scripts with minimal headers
-    if ("application/json" in accept and 
-        not accept_language and 
-        not sec_ch_ua and 
-        len(user_agent) < 20):
-        return True
-    
+    # Allow all traffic - no bot protection
     return False
   
 
