@@ -5,15 +5,15 @@ from datetime import datetime, timedelta
 from typing import Optional
 import secrets
 import os
-# Add this import at the top of auth.py with other imports
 import bcrypt
 
 # Import models and schemas directly
 from models import User, PasswordReset
-from schemas import UserCreate, UserLogin, Token, PasswordResetRequest, PasswordResetConfirm
+from schemas import UserCreate, UserLogin, Token, PasswordResetRequest, PasswordResetConfirm, GoogleLoginSchema
 from database import get_db
 from email_utils import send_email_async
-import jwt  # Add this import
+import jwt
+from routers.google import verify_google_token
 
 router = APIRouter()
 security = HTTPBearer()
@@ -491,3 +491,60 @@ async def reset_password(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while resetting the password"
         )
+
+@router.post("/google")
+def google_login(data: GoogleLoginSchema, db: Session = Depends(get_db)):
+    # 1️⃣ Verify token
+    try:
+        payload = verify_google_token(data.id_token)
+    except Exception as e:
+        print("❌ GOOGLE VERIFY ERROR:", e)
+        raise HTTPException(status_code=401, detail="Invalid Google token")
+
+    # 2️⃣ Find user
+    user = db.query(User).filter(User.email == payload["email"]).first()
+
+    # 3️⃣ Create user if not exists
+    if not user:
+        try:
+            user = User(
+                full_name=payload.get("name") or payload["email"].split("@")[0],
+                email=payload["email"],
+                google_id=payload["google_id"],
+                avatar=payload.get("picture"),
+                hashed_password="",  # No password for Google users
+                is_verified=True
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+        except Exception as e:
+            db.rollback()
+            print("❌ DB CREATE ERROR:", e)
+            raise HTTPException(
+                status_code=500,
+                detail="User creation failed"
+            )
+
+    try:
+        payload = verify_google_token(data.id_token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid Google token")
+
+    user = db.query(User).filter(User.email == payload["email"]).first()
+
+    if not user:
+        user = User(
+            full_name=payload["name"],
+            email=payload["email"],
+            google_id=payload["google_id"],
+            avatar=payload["picture"],
+            hashed_password="",  # No password for Google users
+            is_verified=True
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    token = create_access_token({"user_id": user.id})
+    return {"access_token": token}

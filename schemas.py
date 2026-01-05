@@ -114,3 +114,6 @@ class PasswordResetRequest(BaseModel):
 class PasswordResetConfirm(BaseModel):
     token: str
     password: str
+
+class GoogleLoginSchema(BaseModel):
+    id_token: str
