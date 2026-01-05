@@ -9,9 +9,10 @@ echo "🚀 Starting Production Deployment..."
 echo "📥 Pulling latest code..."
 git pull origin main
 
-# 2. Install dependencies
+# 2. Install dependencies including Google OAuth
 echo "📦 Installing dependencies..."
 pip install -r requirements.txt
+pip install google-auth google-auth-oauthlib google-auth-httplib2
 
 # 3. Set environment variables
 echo "⚙️ Setting environment variables..."
