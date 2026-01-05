@@ -23,8 +23,11 @@ cd /path/to/analytics-dashboard-backend
 # Pull latest code
 git pull origin main
 
-# Install dependencies
+# Install dependencies (includes Google OAuth libraries)
 pip install -r requirements.txt
+
+# Alternative: Install Google OAuth manually if needed
+pip install google-auth google-auth-oauthlib google-auth-httplib2
 ```
 
 ### 3. Set Environment Variables
