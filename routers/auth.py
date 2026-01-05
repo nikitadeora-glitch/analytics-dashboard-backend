@@ -513,6 +513,7 @@ def google_login(data: GoogleLoginSchema, db: Session = Depends(get_db)):
                 google_id=payload["google_id"],
                 avatar=payload.get("picture"),
                 hashed_password="",  # No password for Google users
+                company_name="",  # Empty string instead of None
                 is_verified=True
             )
             db.add(user)
