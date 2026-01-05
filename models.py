@@ -3,19 +3,38 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 from database import Base
 
+from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy.orm import relationship
+from datetime import datetime
+from database import Base
+
+
 class User(Base):
     __tablename__ = "users"
-    
+
     id = Column(Integer, primary_key=True, index=True)
+
     full_name = Column(String, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
-    company_name = Column(String, nullable=True)  # Make nullable
-    hashed_password = Column(String, nullable=False)
+    company_name = Column(String, nullable=True)
+
+    # ✅ Password optional (for Google users)
+    hashed_password = Column(String, nullable=True)
+
+    # ✅ Google fields
+    google_id = Column(String, nullable=True)
+    avatar = Column(String, nullable=True)
+
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
+
     created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )
+
     projects = relationship("Project", back_populates="user")
     password_resets = relationship("PasswordReset", back_populates="user")
 
