@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
+from sqlalchemy import func, desc, case
 from database import get_db
 import models, schemas
 from datetime import datetime, timedelta
@@ -8,6 +8,7 @@ from typing import Optional
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import utils
 import re
+import pytz
 
 router = APIRouter()
 security = HTTPBearer(auto_error=False)  # Make authentication optional
@@ -316,6 +317,117 @@ def get_summary_view(
         }
     }
 
+def get_hourly_analytics_range_logic(
+    project_id: int, 
+    start_date: str,
+    end_date: str,
+    db: Session,
+    current_user: Optional[models.User]
+):
+    """Shared logic for hourly analytics for a date range"""
+    
+    # Parse the date strings - handle different formats
+    from urllib.parse import unquote
+    decoded_start_date = unquote(start_date)
+    decoded_end_date = unquote(end_date)
+    
+    # Try different date formats
+    date_formats = [
+        "%a, %d %b %Y",  # "Mon, 16 Dec 2024"
+        "%Y-%m-%d",      # "2024-12-16"
+        "%d %b %Y",      # "16 Dec 2024"
+        "%d/%m/%Y",      # "16/12/2024"
+    ]
+    
+    parsed_start_date = None
+    parsed_end_date = None
+    
+    for fmt in date_formats:
+        try:
+            parsed_start_date = datetime.strptime(decoded_start_date, fmt).date()
+            break
+        except ValueError:
+            continue
+    
+    for fmt in date_formats:
+        try:
+            parsed_end_date = datetime.strptime(decoded_end_date, fmt).date()
+            break
+        except ValueError:
+            continue
+    
+    if not parsed_start_date or not parsed_end_date:
+        raise HTTPException(status_code=400, detail="Invalid date format")
+    
+    # Convert to IST timezone and get UTC ranges
+    ist = pytz.timezone('Asia/Kolkata')
+    start_datetime_ist = ist.localize(datetime.combine(parsed_start_date, datetime.min.time()))
+    end_datetime_ist = ist.localize(datetime.combine(parsed_end_date, datetime.max.time()))
+    
+    start_datetime_utc = start_datetime_ist.astimezone(pytz.UTC)
+    end_datetime_utc = end_datetime_ist.astimezone(pytz.UTC)
+    
+    print(f" Getting hourly data for range {parsed_start_date} to {parsed_end_date} IST ({start_datetime_utc} to {end_datetime_utc})")
+    
+    # Get hourly data for the date range
+    hourly_data = db.query(
+        func.extract('hour', models.Visit.visited_at).label('hour'),
+        func.count(models.Visit.id).label('page_views'),
+        func.count(func.distinct(models.Visit.visitor_id)).label('unique_visits'),
+        func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits')
+    ).filter(
+        models.Visit.project_id == project_id,
+        models.Visit.visited_at >= start_datetime_utc,
+        models.Visit.visited_at <= end_datetime_utc
+    ).group_by(
+        func.extract('hour', models.Visit.visited_at)
+    ).all()
+    
+    print(f" Found {len(hourly_data)} hours with data for date range")
+    
+    # Create hourly stats array for all 24 hours
+    hourly_stats = []
+    for hour in range(24):
+        hour_data = next((h for h in hourly_data if int(h.hour) == hour), None)
+        
+        if hour_data:
+            page_views = hour_data.page_views
+            unique_visits = hour_data.unique_visits
+            first_time_visits = hour_data.first_time_visits or 0
+        else:
+            page_views = 0
+            unique_visits = 0
+            first_time_visits = 0
+        
+        returning_visits = unique_visits - first_time_visits
+        
+        hourly_stats.append({
+            "hour": f"{hour:02d}:00",
+            "page_views": page_views,
+            "unique_visits": unique_visits,
+            "first_time_visits": first_time_visits,
+            "returning_visits": returning_visits
+        })
+    
+    # Calculate totals
+    total_page_views = sum(h['page_views'] for h in hourly_stats)
+    total_unique_visits = sum(h['unique_visits'] for h in hourly_stats)
+    total_first_time_visits = sum(h['first_time_visits'] for h in hourly_stats)
+    total_returning_visits = sum(h['returning_visits'] for h in hourly_stats)
+    
+    print(f" Hourly analytics for range calculated - Totals: {{'page_views': {total_page_views}, 'unique_visits': {total_unique_visits}, 'first_time_visits': {total_first_time_visits}, 'returning_visits': {total_returning_visits}}}")
+    
+    return {
+        "date_range": f"{decoded_start_date} to {decoded_end_date}",
+        "hourly_stats": hourly_stats,
+        "totals": {
+            "page_views": total_page_views,
+            "unique_visits": total_unique_visits,
+            "first_time_visits": total_first_time_visits,
+            "returning_visits": total_returning_visits
+        }
+    }
+
 @router.get("/{project_id}/hourly-range")
 def get_hourly_analytics_range(
     project_id: int, 
@@ -336,35 +448,7 @@ def get_hourly_analytics_range(
         raise HTTPException(status_code=403, detail="Access denied")
     
     try:
-        # Parse the date strings - handle different formats
-        from urllib.parse import unquote
-        decoded_start_date = unquote(start_date)
-        decoded_end_date = unquote(end_date)
-        
-        # Try different date formats
-        date_formats = [
-            "%a, %d %b %Y",  # "Mon, 16 Dec 2024"
-            "%Y-%m-%d",      # "2024-12-16"
-            "%d %b %Y",      # "16 Dec 2024"
-            "%d/%m/%Y",      # "16/12/2024"
-        ]
-        
-        parsed_start_date = None
-        parsed_end_date = None
-        
-        for fmt in date_formats:
-            try:
-                parsed_start_date = datetime.strptime(decoded_start_date, fmt).date()
-                break
-            except ValueError:
-                continue
-        
-        for fmt in date_formats:
-            try:
-                parsed_end_date = datetime.strptime(decoded_end_date, fmt).date()
-                break
-            except ValueError:
-                continue
+        return get_hourly_analytics_range_logic(project_id, start_date, end_date, db, current_user)
         
         if not parsed_start_date or not parsed_end_date:
             raise HTTPException(status_code=400, detail=f"Invalid date format: {decoded_start_date} - {decoded_end_date}")
@@ -470,14 +554,47 @@ def get_hourly_analytics(
         raise HTTPException(status_code=403, detail="Access denied")
     
     try:
-        # Parse the date string - handle different formats
+        # Parse the date string - handle different formats including date ranges
         from urllib.parse import unquote
         decoded_date = unquote(date)
         
         # Add debug logging
         print(f"🔍 Debug: Received date string: '{decoded_date}'")
         
-        # Try different date formats
+        # Check if it's a date range (contains " - ")
+        if " - " in decoded_date:
+            # Handle date range format: "Wed, 31 Dec 2025 - Tue, 06 Jan 2026"
+            start_date_str, end_date_str = decoded_date.split(" - ", 1)
+            print(f"📅 Date range detected: Start='{start_date_str}', End='{end_date_str}'")
+            
+            # Parse start date
+            start_date = None
+            for fmt in ["%a, %d %b %Y", "%Y-%m-%d", "%d %b %Y", "%d/%m/%Y", "%B %d, %Y", "%b %d, %Y"]:
+                try:
+                    start_date = datetime.strptime(start_date_str, fmt).date()
+                    print(f"✅ Start date parsed with format '{fmt}': {start_date}")
+                    break
+                except ValueError:
+                    continue
+            
+            # Parse end date
+            end_date = None
+            for fmt in ["%a, %d %b %Y", "%Y-%m-%d", "%d %b %Y", "%d/%m/%Y", "%B %d, %Y", "%b %d, %Y"]:
+                try:
+                    end_date = datetime.strptime(end_date_str, fmt).date()
+                    print(f"✅ End date parsed with format '{fmt}': {end_date}")
+                    break
+                except ValueError:
+                    continue
+            
+            if not start_date or not end_date:
+                print(f"🚨 ERROR: Could not parse date range '{decoded_date}'!")
+                raise HTTPException(status_code=400, detail=f"Invalid date range format: {decoded_date}")
+            
+            # Use hourly-range endpoint logic for date ranges
+            return get_hourly_analytics_range_logic(project_id, start_date_str, end_date_str, db, current_user)
+        
+        # Handle single date formats
         date_formats = [
             "%a, %d %b %Y",  # "Mon, 08 Dec 2024"
             "%Y-%m-%d",      # "2024-12-16"
