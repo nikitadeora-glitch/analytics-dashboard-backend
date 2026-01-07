@@ -16,6 +16,8 @@ origins = [
     "http://statecounterrahul.netlify.app",
     "https://seo.prpwebs.com",
     "http://seo.prpwebs.com",
+    "https://api.seo.prpwebs.com",
+    "http://api.seo.prpwebs.com",
     "https://api.seo.growebs.com",
     "http://api.seo.growebs.com",
     "https://landing-page-beautyproduct.netlify.app",
