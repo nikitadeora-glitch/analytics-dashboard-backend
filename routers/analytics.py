@@ -103,7 +103,13 @@ def get_summary(
         ist_date_expr.label('visit_date'),
         func.count(models.Visit.id).label('page_views'),
         func.count(func.distinct(models.Visit.visitor_id)).label('unique_visits'),
-        func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits')
+        func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits'),
+        func.count(func.distinct(
+            case(
+                (models.Visit.is_unique == False, models.Visit.visitor_id),
+                else_=None
+            )
+        )).label('returning_visits')
     ).filter(
         models.Visit.project_id == project_id,
         models.Visit.visited_at >= start_date_utc
@@ -114,7 +120,8 @@ def get_summary(
         row.visit_date: {
             'page_views': row.page_views,
             'unique_visits': row.unique_visits,
-            'first_time_visits': row.first_time_visits or 0
+            'first_time_visits': row.first_time_visits or 0,
+            'returning_visits': row.returning_visits or 0
         }
         for row in daily_data
     }
@@ -130,14 +137,14 @@ def get_summary(
         stats = stats_dict.get(day_date)
         if stats is None:
             # Fallback for string keys
-            stats = stats_dict.get(str(day_date), {'page_views': 0, 'unique_visits': 0, 'first_time_visits': 0})
+            stats = stats_dict.get(str(day_date), {'page_views': 0, 'unique_visits': 0, 'first_time_visits': 0, 'returning_visits': 0})
         
         daily_stats.append({
             "date": day_start_ist.strftime("%a, %d %b %Y"),
             "page_views": stats['page_views'],
             "unique_visits": stats['unique_visits'],
             "first_time_visits": stats['first_time_visits'],
-            "returning_visits": stats['unique_visits'] - stats['first_time_visits']
+            "returning_visits": stats['returning_visits']
         })
     
     # Get ALL historical data (no date limit)
@@ -145,7 +152,13 @@ def get_summary(
         ist_date_expr.label('visit_date'),
         func.count(models.Visit.id).label('page_views'),
         func.count(func.distinct(models.Visit.visitor_id)).label('unique_visits'),
-        func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits')
+        func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits'),
+        func.count(func.distinct(
+            case(
+                (models.Visit.is_unique == False, models.Visit.visitor_id),
+                else_=None
+            )
+        )).label('returning_visits')
     ).filter(
         models.Visit.project_id == project_id
     ).group_by(ist_date_expr).order_by(ist_date_expr).all()
@@ -166,7 +179,7 @@ def get_summary(
             "page_views": row.page_views,
             "unique_visits": row.unique_visits,
             "first_time_visits": row.first_time_visits or 0,
-            "returning_visits": row.unique_visits - (row.first_time_visits or 0)
+            "returning_visits": row.returning_visits or 0
         })
     
     # Calculate averages
@@ -265,7 +278,13 @@ def get_summary_view(
         ist_date_expr.label('visit_date'),
         func.count(models.Visit.id).label('page_views'),
         func.count(func.distinct(models.Visit.visitor_id)).label('unique_visits'),
-        func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits')
+        func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits'),
+        func.count(func.distinct(
+            case(
+                (models.Visit.is_unique == False, models.Visit.visitor_id),
+                else_=None
+            )
+        )).label('returning_visits')
     ).filter(
         models.Visit.project_id == project_id,
         models.Visit.visited_at >= start_date_utc
@@ -275,7 +294,8 @@ def get_summary_view(
         row.visit_date: {
             'page_views': row.page_views,
             'unique_visits': row.unique_visits,
-            'first_time_visits': row.first_time_visits or 0
+            'first_time_visits': row.first_time_visits or 0,
+            'returning_visits': row.returning_visits or 0
         }
         for row in daily_data
     }
@@ -287,14 +307,14 @@ def get_summary_view(
         
         stats = stats_dict.get(day_date)
         if stats is None:
-            stats = stats_dict.get(str(day_date), {'page_views': 0, 'unique_visits': 0, 'first_time_visits': 0})
+            stats = stats_dict.get(str(day_date), {'page_views': 0, 'unique_visits': 0, 'first_time_visits': 0, 'returning_visits': 0})
         
         daily_stats.append({
             "date": day_start_ist.strftime("%a, %d %b %Y"),
             "page_views": stats['page_views'],
             "unique_visits": stats['unique_visits'],
             "first_time_visits": stats['first_time_visits'],
-            "returning_visits": stats['unique_visits'] - stats['first_time_visits']
+            "returning_visits": stats['returning_visits']
         })
     
     # Calculate averages
@@ -374,7 +394,13 @@ def get_hourly_analytics_range_logic(
         func.extract('hour', models.Visit.visited_at).label('hour'),
         func.count(models.Visit.id).label('page_views'),
         func.count(func.distinct(models.Visit.visitor_id)).label('unique_visits'),
-        func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits')
+        func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits'),
+        func.count(func.distinct(
+            case(
+                (models.Visit.is_unique == False, models.Visit.visitor_id),
+                else_=None
+            )
+        )).label('returning_visits')
     ).filter(
         models.Visit.project_id == project_id,
         models.Visit.visited_at >= start_datetime_utc,
@@ -394,12 +420,12 @@ def get_hourly_analytics_range_logic(
             page_views = hour_data.page_views
             unique_visits = hour_data.unique_visits
             first_time_visits = hour_data.first_time_visits or 0
+            returning_visits = hour_data.returning_visits or 0
         else:
             page_views = 0
             unique_visits = 0
             first_time_visits = 0
-        
-        returning_visits = unique_visits - first_time_visits
+            returning_visits = 0
         
         hourly_stats.append({
             "hour": f"{hour:02d}:00",
@@ -409,11 +435,15 @@ def get_hourly_analytics_range_logic(
             "returning_visits": returning_visits
         })
     
-    # Calculate totals
+    # Calculate totals correctly - avoid double counting visitors across hours
+    # For page_views: sum all hourly page_views (correct)
     total_page_views = sum(h['page_views'] for h in hourly_stats)
-    total_unique_visits = sum(h['unique_visits'] for h in hourly_stats)
-    total_first_time_visits = sum(h['first_time_visits'] for h in hourly_stats)
-    total_returning_visits = sum(h['returning_visits'] for h in hourly_stats)
+    
+    # For unique_visits and first_time_visits: use the original query results, not sum of hourly
+    # because same visitor can appear in multiple hours
+    total_unique_visits = sum(h.unique_visits for h in hourly_data)
+    total_first_time_visits = sum(h.first_time_visits or 0 for h in hourly_data)
+    total_returning_visits = sum(h.returning_visits or 0 for h in hourly_data)
     
     print(f" Hourly analytics for range calculated - Totals: {{'page_views': {total_page_views}, 'unique_visits': {total_unique_visits}, 'first_time_visits': {total_first_time_visits}, 'returning_visits': {total_returning_visits}}}")
     
@@ -484,7 +514,8 @@ def get_hourly_analytics_range(
             int(row.hour): {
                 'page_views': row.page_views,
                 'unique_visits': row.unique_visits,
-                'first_time_visits': row.first_time_visits or 0
+                'first_time_visits': row.first_time_visits or 0,
+                'returning_visits': row.returning_visits or 0
             }
             for row in hourly_data
         }
@@ -503,7 +534,7 @@ def get_hourly_analytics_range(
                 "page_views": stats['page_views'],
                 "unique_visits": stats['unique_visits'],
                 "first_time_visits": stats['first_time_visits'],
-                "returning_visits": stats['unique_visits'] - stats['first_time_visits']
+                "returning_visits": stats['returning_visits']
             })
         
         # Calculate totals
@@ -635,7 +666,13 @@ def get_hourly_analytics(
             ist_hour_expr.label('hour'),
             func.count(models.Visit.id).label('page_views'),
             func.count(func.distinct(models.Visit.visitor_id)).label('unique_visits'),
-            func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits')
+            func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits'),
+            func.count(func.distinct(
+                case(
+                    (models.Visit.is_unique == False, models.Visit.visitor_id),
+                    else_=None
+                )
+            )).label('returning_visits')
         ).filter(
             models.Visit.project_id == project_id,
             models.Visit.visited_at >= day_start_utc,
@@ -644,12 +681,30 @@ def get_hourly_analytics(
         
         print(f" Found {len(hourly_data)} hours with data")
         
+        # Get correct daily totals without double-counting
+        daily_totals = db.query(
+            func.count(models.Visit.id).label('page_views'),
+            func.count(func.distinct(models.Visit.visitor_id)).label('unique_visits'),
+            func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits'),
+            func.count(func.distinct(
+                case(
+                    (models.Visit.is_unique == False, models.Visit.visitor_id),
+                    else_=None
+                )
+            )).label('returning_visits')
+        ).filter(
+            models.Visit.project_id == project_id,
+            models.Visit.visited_at >= day_start_utc,
+            models.Visit.visited_at <= day_end_utc
+        ).first()
+        
         # Create a dict for quick lookup
         hourly_dict = {
             int(row.hour): {
                 'page_views': row.page_views,
                 'unique_visits': row.unique_visits,
-                'first_time_visits': row.first_time_visits or 0
+                'first_time_visits': row.first_time_visits or 0,
+                'returning_visits': row.returning_visits or 0
             }
             for row in hourly_data
         }
@@ -660,7 +715,7 @@ def get_hourly_analytics(
             hour_str = f"{hour:02d}:00"
             time_range = f"{hour:02d}:00-{hour:02d}:59"
             
-            stats = hourly_dict.get(hour, {'page_views': 0, 'unique_visits': 0, 'first_time_visits': 0})
+            stats = hourly_dict.get(hour, {'page_views': 0, 'unique_visits': 0, 'first_time_visits': 0, 'returning_visits': 0})
             
             hourly_stats.append({
                 "date": hour_str,
@@ -668,15 +723,24 @@ def get_hourly_analytics(
                 "page_views": stats['page_views'],
                 "unique_visits": stats['unique_visits'],
                 "first_time_visits": stats['first_time_visits'],
-                "returning_visits": stats['unique_visits'] - stats['first_time_visits']
+                "returning_visits": stats['returning_visits']
             })
         
-        # Calculate totals
+        # Calculate totals correctly - use daily totals to avoid double counting
+        # For page_views: sum all hourly page_views (correct)
+        total_page_views = sum(h['page_views'] for h in hourly_stats)
+        
+        # For unique_visits, first_time_visits, returning_visits: use daily totals
+        # because same visitor can appear in multiple hours
+        total_unique_visits = daily_totals.unique_visits or 0
+        total_first_time_visits = daily_totals.first_time_visits or 0
+        total_returning_visits = daily_totals.returning_visits or 0
+        
         totals = {
-            'page_views': sum(h['page_views'] for h in hourly_stats),
-            'unique_visits': sum(h['unique_visits'] for h in hourly_stats),
-            'first_time_visits': sum(h['first_time_visits'] for h in hourly_stats),
-            'returning_visits': sum(h['returning_visits'] for h in hourly_stats)
+            'page_views': total_page_views,
+            'unique_visits': total_unique_visits,
+            'first_time_visits': total_first_time_visits,
+            'returning_visits': total_returning_visits
         }
         
         # Calculate averages
