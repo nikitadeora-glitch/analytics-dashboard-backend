@@ -572,7 +572,7 @@ def get_hourly_analytics(
     date: str,
     db: Session = Depends(get_db),
     current_user: Optional[models.User] = Depends(get_current_user_optional)
-):
+ ):
     """Get hourly analytics for a specific date"""
     
     # Check if project exists and user has access
