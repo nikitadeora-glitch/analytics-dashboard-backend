@@ -98,18 +98,20 @@ def get_summary(
     dialect_name = db.bind.dialect.name
     ist_date_expr = utils.get_ist_date_expr(models.Visit.visited_at, dialect_name)
     
-    # Single query to get all stats grouped by date
+    # Single query to get all stats grouped by date - COUNTING ACTUAL PAGEVIEWS
     daily_data = db.query(
         ist_date_expr.label('visit_date'),
-        func.count(models.Visit.id).label('page_views'),
+        func.count(models.PageView.id).label('page_views'),
         func.count(func.distinct(models.Visit.visitor_id)).label('unique_visits'),
-        func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits'),
+        func.count(func.distinct(case((models.Visit.is_unique == True, models.Visit.visitor_id), else_=None))).label('first_time_visits'),
         func.count(func.distinct(
             case(
                 (models.Visit.is_unique == False, models.Visit.visitor_id),
                 else_=None
             )
         )).label('returning_visits')
+    ).join(
+        models.PageView, models.Visit.id == models.PageView.visit_id
     ).filter(
         models.Visit.project_id == project_id,
         models.Visit.visited_at >= start_date_utc
@@ -150,15 +152,17 @@ def get_summary(
     # Get ALL historical data (no date limit)
     all_time_data = db.query(
         ist_date_expr.label('visit_date'),
-        func.count(models.Visit.id).label('page_views'),
+        func.count(models.PageView.id).label('page_views'),
         func.count(func.distinct(models.Visit.visitor_id)).label('unique_visits'),
-        func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits'),
+        func.count(func.distinct(case((models.Visit.is_unique == True, models.Visit.visitor_id), else_=None))).label('first_time_visits'),
         func.count(func.distinct(
             case(
                 (models.Visit.is_unique == False, models.Visit.visitor_id),
                 else_=None
             )
         )).label('returning_visits')
+    ).join(
+        models.PageView, models.Visit.id == models.PageView.visit_id
     ).filter(
         models.Visit.project_id == project_id
     ).group_by(ist_date_expr).order_by(ist_date_expr).all()
@@ -273,18 +277,20 @@ def get_summary_view(
     dialect_name = db.bind.dialect.name
     ist_date_expr = utils.get_ist_date_expr(models.Visit.visited_at, dialect_name)
     
-    # Single query to get all stats grouped by date
+    # Single query to get all stats grouped by date - COUNTING ACTUAL PAGEVIEWS
     daily_data = db.query(
         ist_date_expr.label('visit_date'),
-        func.count(models.Visit.id).label('page_views'),
+        func.count(models.PageView.id).label('page_views'),
         func.count(func.distinct(models.Visit.visitor_id)).label('unique_visits'),
-        func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits'),
+        func.count(func.distinct(case((models.Visit.is_unique == True, models.Visit.visitor_id), else_=None))).label('first_time_visits'),
         func.count(func.distinct(
             case(
                 (models.Visit.is_unique == False, models.Visit.visitor_id),
                 else_=None
             )
         )).label('returning_visits')
+    ).join(
+        models.PageView, models.Visit.id == models.PageView.visit_id
     ).filter(
         models.Visit.project_id == project_id,
         models.Visit.visited_at >= start_date_utc
@@ -389,24 +395,26 @@ def get_hourly_analytics_range_logic(
     
     print(f" Getting hourly data for range {parsed_start_date} to {parsed_end_date} IST ({start_datetime_utc} to {end_datetime_utc})")
     
-    # Get hourly data for the date range
+    # Get hourly data for the date range - COUNTING ACTUAL PAGEVIEWS
     hourly_data = db.query(
-        func.extract('hour', models.Visit.visited_at).label('hour'),
-        func.count(models.Visit.id).label('page_views'),
+        func.extract('hour', models.PageView.viewed_at).label('hour'),
+        func.count(models.PageView.id).label('page_views'),
         func.count(func.distinct(models.Visit.visitor_id)).label('unique_visits'),
-        func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits'),
+        func.count(func.distinct(case((models.Visit.is_unique == True, models.Visit.visitor_id), else_=None))).label('first_time_visits'),
         func.count(func.distinct(
             case(
                 (models.Visit.is_unique == False, models.Visit.visitor_id),
                 else_=None
             )
         )).label('returning_visits')
+    ).join(
+        models.PageView, models.Visit.id == models.PageView.visit_id
     ).filter(
         models.Visit.project_id == project_id,
-        models.Visit.visited_at >= start_datetime_utc,
-        models.Visit.visited_at <= end_datetime_utc
+        models.PageView.viewed_at >= start_datetime_utc,
+        models.PageView.viewed_at <= end_datetime_utc
     ).group_by(
-        func.extract('hour', models.Visit.visited_at)
+        func.extract('hour', models.PageView.viewed_at)
     ).all()
     
     print(f" Found {len(hourly_data)} hours with data for date range")
@@ -491,20 +499,22 @@ def get_hourly_analytics_range(
         
         print(f" Getting hourly data for range {parsed_start_date} to {parsed_end_date} IST ({range_start_utc} to {range_end_utc} UTC)")
         
-        # Query hourly data using SQL for the entire date range
+        # Query hourly data using SQL for the entire date range - COUNTING ACTUAL PAGEVIEWS
         from sqlalchemy import extract, case
         dialect_name = db.bind.dialect.name
-        ist_hour_expr = utils.get_ist_hour_expr(models.Visit.visited_at, dialect_name)
+        ist_hour_expr = utils.get_ist_hour_expr(models.PageView.viewed_at, dialect_name)
         
         hourly_data = db.query(
             ist_hour_expr.label('hour'),
-            func.count(models.Visit.id).label('page_views'),
+            func.count(models.PageView.id).label('page_views'),
             func.count(func.distinct(models.Visit.visitor_id)).label('unique_visits'),
-            func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits')
+            func.count(func.distinct(case((models.Visit.is_unique == True, models.Visit.visitor_id), else_=None))).label('first_time_visits'),
+        ).join(
+            models.PageView, models.Visit.id == models.PageView.visit_id
         ).filter(
             models.Visit.project_id == project_id,
-            models.Visit.visited_at >= range_start_utc,
-            models.Visit.visited_at <= range_end_utc
+            models.PageView.viewed_at >= range_start_utc,
+            models.PageView.viewed_at <= range_end_utc
         ).group_by('hour').all()
         
         print(f" Found {len(hourly_data)} hours with data for date range")
@@ -657,45 +667,49 @@ def get_hourly_analytics(
         
         print(f" Getting hourly data for {parsed_date} IST ({day_start_utc} to {day_end_utc} UTC)")
         
-        # Query hourly data using SQL
+        # Query hourly data using SQL - COUNTING ACTUAL PAGEVIEWS
         from sqlalchemy import extract, case
         dialect_name = db.bind.dialect.name
-        ist_hour_expr = utils.get_ist_hour_expr(models.Visit.visited_at, dialect_name)
+        ist_hour_expr = utils.get_ist_hour_expr(models.PageView.viewed_at, dialect_name)
         
         hourly_data = db.query(
             ist_hour_expr.label('hour'),
-            func.count(models.Visit.id).label('page_views'),
+            func.count(models.PageView.id).label('page_views'),
             func.count(func.distinct(models.Visit.visitor_id)).label('unique_visits'),
-            func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits'),
+            func.count(func.distinct(case((models.Visit.is_unique == True, models.Visit.visitor_id), else_=None))).label('first_time_visits'),
             func.count(func.distinct(
                 case(
                     (models.Visit.is_unique == False, models.Visit.visitor_id),
                     else_=None
                 )
             )).label('returning_visits')
+        ).join(
+            models.PageView, models.Visit.id == models.PageView.visit_id
         ).filter(
             models.Visit.project_id == project_id,
-            models.Visit.visited_at >= day_start_utc,
-            models.Visit.visited_at <= day_end_utc
+            models.PageView.viewed_at >= day_start_utc,
+            models.PageView.viewed_at <= day_end_utc
         ).group_by('hour').all()
         
         print(f" Found {len(hourly_data)} hours with data")
         
-        # Get correct daily totals without double-counting
+        # Get correct daily totals without double-counting - COUNTING ACTUAL PAGEVIEWS
         daily_totals = db.query(
-            func.count(models.Visit.id).label('page_views'),
+            func.count(models.PageView.id).label('page_views'),
             func.count(func.distinct(models.Visit.visitor_id)).label('unique_visits'),
-            func.sum(case((models.Visit.is_unique == True, 1), else_=0)).label('first_time_visits'),
+            func.count(func.distinct(case((models.Visit.is_unique == True, models.Visit.visitor_id), else_=None))).label('first_time_visits'),
             func.count(func.distinct(
                 case(
                     (models.Visit.is_unique == False, models.Visit.visitor_id),
                     else_=None
                 )
             )).label('returning_visits')
+        ).join(
+            models.PageView, models.Visit.id == models.PageView.visit_id
         ).filter(
             models.Visit.project_id == project_id,
-            models.Visit.visited_at >= day_start_utc,
-            models.Visit.visited_at <= day_end_utc
+            models.PageView.viewed_at >= day_start_utc,
+            models.PageView.viewed_at <= day_end_utc
         ).first()
         
         # Create a dict for quick lookup

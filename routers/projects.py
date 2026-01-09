@@ -127,61 +127,92 @@ def get_all_projects_stats(
     
     project_ids = [p.id for p in projects]
     
-    # Date ranges
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    yesterday_start = today_start - timedelta(days=1)
-    month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    # Date ranges - using IST timezone for consistency
+    import pytz
+    ist = pytz.timezone('Asia/Kolkata')
+    now_utc = datetime.utcnow().replace(tzinfo=pytz.UTC)
+    now_ist = now_utc.astimezone(ist)
     
-    # Bulk query for today's visits
+    today_start_ist = now_ist.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start_utc = today_start_ist.astimezone(pytz.UTC).replace(tzinfo=None)
+    
+    yesterday_start_ist = today_start_ist - timedelta(days=1)
+    yesterday_start_utc = yesterday_start_ist.astimezone(pytz.UTC).replace(tzinfo=None)
+    
+    month_start_ist = now_ist.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_start_utc = month_start_ist.astimezone(pytz.UTC).replace(tzinfo=None)
+    
+    print(f"Date ranges for page views: Today IST {today_start_ist} (UTC {today_start_utc}), Yesterday IST {yesterday_start_ist} (UTC {yesterday_start_utc}), Month IST {month_start_ist} (UTC {month_start_utc})")
+    
+    # Bulk query for today's PAGE VIEWS (not visits)
     today_stats = db.query(
         models.Visit.project_id,
-        func.count(models.Visit.id).label('count')
+        func.count(models.PageView.id).label('count')
+    ).join(
+        models.PageView, models.Visit.id == models.PageView.visit_id
     ).filter(
         models.Visit.project_id.in_(project_ids),
-        models.Visit.visited_at >= today_start
+        models.PageView.viewed_at >= today_start_utc
     ).group_by(models.Visit.project_id).all()
     
-    # Bulk query for yesterday's visits
+    # Bulk query for yesterday's PAGE VIEWS (not visits)
     yesterday_stats = db.query(
         models.Visit.project_id,
-        func.count(models.Visit.id).label('count')
+        func.count(models.PageView.id).label('count')
+    ).join(
+        models.PageView, models.Visit.id == models.PageView.visit_id
     ).filter(
         models.Visit.project_id.in_(project_ids),
-        models.Visit.visited_at >= yesterday_start,
-        models.Visit.visited_at < today_start
+        models.PageView.viewed_at >= yesterday_start_utc,
+        models.PageView.viewed_at < today_start_utc
     ).group_by(models.Visit.project_id).all()
     
-    # Bulk query for month's visits
+    # Bulk query for month's PAGE VIEWS (not visits)
     month_stats = db.query(
         models.Visit.project_id,
-        func.count(models.Visit.id).label('count')
+        func.count(models.PageView.id).label('count')
+    ).join(
+        models.PageView, models.Visit.id == models.PageView.visit_id
     ).filter(
         models.Visit.project_id.in_(project_ids),
-        models.Visit.visited_at >= month_start
+        models.PageView.viewed_at >= month_start_utc
     ).group_by(models.Visit.project_id).all()
     
-    # Bulk query for total visits
+    # Bulk query for total PAGE VIEWS (not visits)
     total_stats = db.query(
         models.Visit.project_id,
-        func.count(models.Visit.id).label('count')
+        func.count(models.PageView.id).label('count')
+    ).join(
+        models.PageView, models.Visit.id == models.PageView.visit_id
     ).filter(
         models.Visit.project_id.in_(project_ids)
     ).group_by(models.Visit.project_id).all()
     
-    # Bulk query for page views
-    page_view_stats = db.query(
-        models.Page.project_id,
-        func.sum(models.Page.total_views).label('total_views')
+    # Bulk query for unique visitors (from visits table - this should remain visitor-based)
+    unique_visitor_stats = db.query(
+        models.Visit.project_id,
+        func.count(func.distinct(models.Visit.visitor_id)).label('count')
     ).filter(
-        models.Page.project_id.in_(project_ids)
-    ).group_by(models.Page.project_id).all()
+        models.Visit.project_id.in_(project_ids)
+    ).group_by(models.Visit.project_id).all()
+    
+    # Bulk query for live visitors (last 5 minutes)
+    five_min_ago = datetime.utcnow() - timedelta(minutes=5)
+    live_visitor_stats = db.query(
+        models.Visit.project_id,
+        func.count(func.distinct(models.Visit.visitor_id)).label('count')
+    ).filter(
+        models.Visit.project_id.in_(project_ids),
+        models.Visit.visited_at >= five_min_ago
+    ).group_by(models.Visit.project_id).all()
     
     # Convert to dictionaries for easy lookup
     today_dict = {stat.project_id: stat.count for stat in today_stats}
     yesterday_dict = {stat.project_id: stat.count for stat in yesterday_stats}
     month_dict = {stat.project_id: stat.count for stat in month_stats}
     total_dict = {stat.project_id: stat.count for stat in total_stats}
-    page_views_dict = {stat.project_id: stat.total_views or 0 for stat in page_view_stats}
+    unique_visitors_dict = {stat.project_id: stat.count for stat in unique_visitor_stats}
+    live_visitors_dict = {stat.project_id: stat.count for stat in live_visitor_stats}
     
     # Build response
     result = []
@@ -193,42 +224,14 @@ def get_all_projects_stats(
             "tracking_code": project.tracking_code,
             "created_at": project.created_at,
             "is_active": project.is_active,
-            "today": today_dict.get(project.id, 0),
-            "yesterday": yesterday_dict.get(project.id, 0),
-            "month": month_dict.get(project.id, 0),
-            "total": total_dict.get(project.id, 0),
-            "page_views": page_views_dict.get(project.id, 0),
-            "unique_visitors": total_dict.get(project.id, 0),  # Simplified for now
-            "live_visitors": 0  # Would need real-time calculation
+            "today": today_dict.get(project.id, 0),  # Now PAGE VIEWS
+            "yesterday": yesterday_dict.get(project.id, 0),  # Now PAGE VIEWS
+            "month": month_dict.get(project.id, 0),  # Now PAGE VIEWS
+            "total": total_dict.get(project.id, 0),  # Now PAGE VIEWS
+            "page_views": total_dict.get(project.id, 0),  # Same as total (page views)
+            "unique_visitors": unique_visitors_dict.get(project.id, 0),  # Still visitor-based
+            "live_visitors": live_visitors_dict.get(project.id, 0)  # Still visitor-based
         }
         result.append(project_data)
-    
-    return result
-    
-    # Convert to dictionaries for fast lookup
-    today_dict = {stat.project_id: stat.count for stat in today_stats}
-    yesterday_dict = {stat.project_id: stat.count for stat in yesterday_stats}
-    month_dict = {stat.project_id: stat.count for stat in month_stats}
-    total_dict = {stat.project_id: stat.count for stat in total_stats}
-    page_views_dict = {stat.project_id: int(stat.total_views or 0) for stat in page_view_stats}
-    
-    # Build result
-    result = []
-    for project in projects:
-        result.append({
-            "id": project.id,
-            "name": project.name,
-            "domain": project.domain,
-            "tracking_code": project.tracking_code,
-            "created_at": project.created_at,
-            "updated_at": project.created_at,  # Add updated_at field
-            "today": today_dict.get(project.id, 0),
-            "yesterday": yesterday_dict.get(project.id, 0),
-            "month": month_dict.get(project.id, 0),
-            "total": total_dict.get(project.id, 0),
-            "page_views": page_views_dict.get(project.id, 0),
-            "unique_visitors": total_dict.get(project.id, 0),  # For now, same as total visits
-            "live_visitors": 0  # Add live visitors (can be enhanced later)
-        })
     
     return result
