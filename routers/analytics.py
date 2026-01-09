@@ -93,7 +93,7 @@ def get_summary(
     
     # IST calculation
     start_date_ist = utils.get_ist_start_of_day(days - 1)
-    start_date_utc = utils.ist_to_utc(start_date_ist)
+    start_date_utc = start_date_ist.astimezone(pytz.UTC)
     
     dialect_name = db.bind.dialect.name
     ist_date_expr = utils.get_ist_date_expr(models.Visit.visited_at, dialect_name)
@@ -268,7 +268,7 @@ def get_summary_view(
     
     # IST calculation
     start_date_ist = utils.get_ist_start_of_day(days - 1)
-    start_date_utc = utils.ist_to_utc(start_date_ist)
+    start_date_utc = start_date_ist.astimezone(pytz.UTC)
     
     dialect_name = db.bind.dialect.name
     ist_date_expr = utils.get_ist_date_expr(models.Visit.visited_at, dialect_name)

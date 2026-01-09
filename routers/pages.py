@@ -52,7 +52,7 @@ def get_most_visited_pages(project_id: int, limit: int = 1000, db: Session = Dep
         
         bounce_rate = (bounced / total_as_entry * 100) if total_as_entry > 0 else 0
         
-        # Get all visits that viewed ANY page matching this base_url
+        # Get all visits that viewed ANY page matching this base_url - ensure consistent counting
         visits = db.query(
             models.Visit.session_id,
             models.Visit.visitor_id,
@@ -118,7 +118,7 @@ def get_entry_pages(project_id: int, limit: int = 1000, db: Session = Depends(ge
         
         bounce_rate = (bounced_sessions / sessions * 100) if sessions > 0 else 0
         
-        # Get all visits for this entry page base url
+        # Get all visits for this entry page base url - use consistent filtering
         visits = db.query(
             models.Visit.session_id,
             models.Visit.visitor_id,
