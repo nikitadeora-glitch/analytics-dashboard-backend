@@ -675,6 +675,28 @@
   }
 
   // ============================================
+  // SINGLE PAGE APPLICATION (SPA) NAVIGATION TRACKING
+  // ============================================
+
+  function trackPageNavigation() {
+    const currentUrl = window.location.href;
+    const currentTitle = document.title;
+    
+    // Check if URL actually changed (avoid duplicate tracking)
+    if (currentUrl === currentPage) {
+      return;
+    }
+    
+    log('🔄 Page navigation detected:', currentUrl);
+    
+    // Track new page view
+    trackPageView(currentUrl, currentTitle);
+    
+    // Update current page
+    currentPage = currentUrl;
+  }
+
+  // ============================================
   // INITIALIZE
   // ============================================
 
@@ -687,16 +709,48 @@
   // Track visit on load
   trackVisit();
 
-  // Track exit on page unload
-  window.addEventListener('beforeunload', trackExit);
-  window.addEventListener('pagehide', trackExit);
-
-  // Track page visibility changes (for mobile)
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') {
+  // Track page navigation for SPAs and browser navigation
+  // This will catch: back/forward buttons, refresh, hash changes, SPA navigation
+  let lastUrl = window.location.href;
+  
+  // Override pushState and replaceState for SPA navigation
+  const originalPushState = history.pushState;
+  const originalReplaceState = history.replaceState;
+  
+  history.pushState = function() {
+    originalPushState.apply(this, arguments);
+    setTimeout(trackPageNavigation, 0); // Delay to allow URL to update
+  };
+  
+  history.replaceState = function() {
+    originalReplaceState.apply(this, arguments);
+    setTimeout(trackPageNavigation, 0); // Delay to allow URL to update
+  };
+  
+  // Listen for popstate (back/forward buttons)
+  window.addEventListener('popstate', function() {
+    setTimeout(trackPageNavigation, 100); // Small delay for browser to update
+  });
+  
+  // Listen for hash changes
+  window.addEventListener('hashchange', trackPageNavigation);
+  
+  // Listen for page visibility changes (handles tab switching, app backgrounding, and refresh)
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'visible') {
+      // Page became visible again, check if URL changed
+      if (window.location.href !== lastUrl) {
+        trackPageNavigation();
+      }
+    } else if (document.visibilityState === 'hidden') {
+      // Track exit when page becomes hidden (covers refresh, tab close, etc.)
       trackExit();
     }
   });
+
+  // Track exit on page unload (backup for older browsers)
+  window.addEventListener('beforeunload', trackExit);
+  window.addEventListener('pagehide', trackExit);
 
   // Setup exit link tracking
   setupExitLinkTracking();
