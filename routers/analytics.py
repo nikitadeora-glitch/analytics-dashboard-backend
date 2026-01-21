@@ -712,8 +712,8 @@ def get_hourly_analytics_range(
             models.PageView, models.Visit.id == models.PageView.visit_id
         ).filter(
             models.Visit.project_id == project_id,
-            models.PageView.viewed_at >= range_start_utc,
-            models.PageView.viewed_at <= range_end_utc
+            models.Visit.visited_at >= range_start_utc,
+            models.Visit.visited_at <= range_end_utc
         ).group_by('hour').all()
         
         print(f" Found {len(hourly_data)} hours with data for date range")
@@ -886,8 +886,8 @@ def get_hourly_analytics(
             models.PageView, models.Visit.id == models.PageView.visit_id
         ).filter(
             models.Visit.project_id == project_id,
-            models.PageView.viewed_at >= day_start_utc,
-            models.PageView.viewed_at <= day_end_utc
+            models.Visit.visited_at >= day_start_utc,
+            models.Visit.visited_at <= day_end_utc
         ).group_by('hour').all()
         
         print(f" Found {len(hourly_data)} hours with data")
@@ -907,8 +907,8 @@ def get_hourly_analytics(
             models.PageView, models.Visit.id == models.PageView.visit_id
         ).filter(
             models.Visit.project_id == project_id,
-            models.PageView.viewed_at >= day_start_utc,
-            models.PageView.viewed_at <= day_end_utc
+            models.Visit.visited_at >= day_start_utc,
+            models.Visit.visited_at <= day_end_utc
         ).first()
         
         # Create a dict for quick lookup

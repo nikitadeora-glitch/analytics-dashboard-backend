@@ -117,7 +117,7 @@ def get_all_projects_stats(
     month_start_utc = month_start_ist.astimezone(pytz.UTC).replace(tzinfo=None)
 
     # -------------------------------
-    # PAGE VIEW BASED STATS
+    # PAGE VIEW BASED STATS - FIXED TO MATCH ANALYTICS
     # -------------------------------
     def page_view_stats(start=None, end=None):
         q = (
@@ -129,9 +129,11 @@ def get_all_projects_stats(
             .filter(models.Visit.project_id.in_(project_ids))
         )
         if start:
-            q = q.filter(models.PageView.viewed_at >= start)
+            # 🔥 FIX: Use Visit.visited_at to match analytics summary endpoint
+            q = q.filter(models.Visit.visited_at >= start)
         if end:
-            q = q.filter(models.PageView.viewed_at < end)
+            # 🔥 FIX: Use Visit.visited_at to match analytics summary endpoint
+            q = q.filter(models.Visit.visited_at < end)
 
         return {r.project_id: r.count for r in q.group_by(models.Visit.project_id).all()}
 
