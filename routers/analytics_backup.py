@@ -57,346 +57,143 @@ def get_current_user_optional(
     except:
         return None
 
-# @router.get("/{project_id}/summary")
-# def get_summary(
-#     project_id: int, 
-#     days: int , 
-#     db: Session = Depends(get_db),
-#     current_user: Optional[models.User] = Depends(get_current_user_optional)
-# ):
-#     # Check if project exists and user has access
-#     project = db.query(models.Project).filter(models.Project.id == project_id).first()
-#     if not project:
-#         raise HTTPException(status_code=404, detail="Project not found")
-    
-#     # If user is authenticated, check if they own the project
-#     if current_user and project.user_id and project.user_id != current_user.id:
-#         raise HTTPException(status_code=403, detail="Access denied")
-    
-#     # Total visits
-#     total_visits = db.query(models.Visit).filter(models.Visit.project_id == project_id).count()
-    
-#     # Unique visitors
-#     unique_visitors = db.query(func.count(func.distinct(models.Visit.visitor_id))).filter(
-#         models.Visit.project_id == project_id
-#     ).scalar()
-    
-#     # Live visitors (last 5 minutes)
-#     five_min_ago = datetime.utcnow() - timedelta(minutes=5)
-#     live_visitors = db.query(func.count(func.distinct(models.Visit.visitor_id))).filter(
-#         models.Visit.project_id == project_id,
-#         models.Visit.visited_at >= five_min_ago
-#     ).scalar()
-    
-#     # Daily stats for specified number of days - OPTIMIZED
-#     from sqlalchemy import case, cast, Date
-    
-#     # IST calculation
-#     start_date_ist = utils.get_ist_start_of_day(days - 1)
-#     start_date_utc = start_date_ist.astimezone(pytz.UTC)
-    
-#     dialect_name = db.bind.dialect.name
-#     ist_date_expr = utils.get_ist_date_expr(models.Visit.visited_at, dialect_name)
-    
-#     # Single query to get all stats grouped by date - COUNTING ACTUAL PAGEVIEWS
-#     daily_data = db.query(
-#         ist_date_expr.label('visit_date'),
-#         func.count(models.PageView.id).label('page_views'),
-#         func.count(func.distinct(models.Visit.visitor_id)).label('unique_visits'),
-#         func.count(func.distinct(case((models.Visit.is_unique == True, models.Visit.visitor_id), else_=None))).label('first_time_visits'),
-#         func.count(func.distinct(
-#             case(
-#                 (models.Visit.is_unique == False, models.Visit.visitor_id),
-#                 else_=None
-#             )
-#         )).label('returning_visits')
-#     ).join(
-#         models.PageView, models.Visit.id == models.PageView.visit_id
-#     ).filter(
-#         models.Visit.project_id == project_id,
-#         models.Visit.visited_at >= start_date_utc
-#     ).group_by(ist_date_expr).all()
-    
-#     # Create a dict for quick lookup
-#     stats_dict = {
-#         row.visit_date: {
-#             'page_views': row.page_views,
-#             'unique_visits': row.unique_visits,
-#             'first_time_visits': row.first_time_visits or 0,
-#             'returning_visits': row.returning_visits or 0
-#         }
-#         for row in daily_data
-#     }
-    
-#     # Build daily stats array with all days (including days with no data)
-#     daily_stats = []
-#     for i in range(days - 1, -1, -1):
-#         day_start_ist = utils.get_ist_start_of_day(i)
-#         day_date = day_start_ist.date()
-        
-#         # SQL returns date as string in some dialects, handle conversion if needed
-#         # stats_dict keys are date objects if cast(..., Date) worked correctly
-#         stats = stats_dict.get(day_date)
-#         if stats is None:
-#             # Fallback for string keys
-#             stats = stats_dict.get(str(day_date), {'page_views': 0, 'unique_visits': 0, 'first_time_visits': 0, 'returning_visits': 0})
-        
-#         daily_stats.append({
-#             "date": day_start_ist.strftime("%a, %d %b %Y"),
-#             "page_views": stats['page_views'],
-#             "unique_visits": stats['unique_visits'],
-#             "first_time_visits": stats['first_time_visits'],
-#             "returning_visits": stats['returning_visits']
-#         })
-    
-#     # Get ALL historical data (no date limit)
-#     all_time_data = db.query(
-#         ist_date_expr.label('visit_date'),
-#         func.count(models.PageView.id).label('page_views'),
-#         func.count(func.distinct(models.Visit.visitor_id)).label('unique_visits'),
-#         func.count(func.distinct(case((models.Visit.is_unique == True, models.Visit.visitor_id), else_=None))).label('first_time_visits'),
-#         func.count(func.distinct(
-#             case(
-#                 (models.Visit.is_unique == False, models.Visit.visitor_id),
-#                 else_=None
-#             )
-#         )).label('returning_visits')
-#     ).join(
-#         models.PageView, models.Visit.id == models.PageView.visit_id
-#     ).filter(
-#         models.Visit.project_id == project_id
-#     ).group_by(ist_date_expr).order_by(ist_date_expr).all()
-    
-#     # Build all-time daily stats
-#     all_daily_stats = []
-#     for row in all_time_data:
-#         # Handle both date objects and strings
-#         row_date = row.visit_date
-#         if isinstance(row_date, str):
-#             try:
-#                 row_date = datetime.strptime(row_date, "%Y-%m-%d").date()
-#             except:
-#                 pass
-                
-#         all_daily_stats.append({
-#             "date": row_date.strftime("%a, %d %b %Y") if hasattr(row_date, 'strftime') else str(row_date),
-#             "page_views": row.page_views,
-#             "unique_visits": row.unique_visits,
-#             "first_time_visits": row.first_time_visits or 0,
-#             "returning_visits": row.returning_visits or 0
-#         })
-    
-#     # Calculate averages
-#     total_days = len(daily_stats)
-#     avg_page_views = sum(d["page_views"] for d in daily_stats) / total_days if total_days > 0 else 0
-#     avg_unique_visits = sum(d["unique_visits"] for d in daily_stats) / total_days if total_days > 0 else 0
-#     avg_first_time = sum(d["first_time_visits"] for d in daily_stats) / total_days if total_days > 0 else 0
-#     avg_returning = sum(d["returning_visits"] for d in daily_stats) / total_days if total_days > 0 else 0
-    
-#     # Top pages
-#     top_pages = db.query(
-#         models.Page.url,
-#         models.Page.title,
-#         models.Page.total_views
-#     ).filter(
-#         models.Page.project_id == project_id
-#     ).order_by(desc(models.Page.total_views)).limit(5).all()
-    
-#     # Top traffic sources
-#     top_sources = db.query(
-#         models.TrafficSource.source_name,
-#         func.sum(models.TrafficSource.visit_count).label('count')
-#     ).filter(
-#         models.TrafficSource.project_id == project_id
-#     ).group_by(models.TrafficSource.source_name).order_by(desc('count')).limit(5).all()
-    
-#     # Device stats
-#     device_stats = db.query(
-#         models.Visit.device,
-#         func.count(models.Visit.id).label('count')
-#     ).filter(
-#         models.Visit.project_id == project_id
-#     ).group_by(models.Visit.device).all()
-    
-#     return {
-#         "total_visits": total_visits,
-#         "unique_visitors": unique_visitors,
-#         "live_visitors": live_visitors,
-#         "daily_stats": daily_stats,
-#         "all_daily_stats": all_daily_stats,  # Complete historical data
-#         "averages": {
-#             "page_views": round(avg_page_views, 1),
-#             "unique_visits": round(avg_unique_visits, 1),
-#             "first_time_visits": round(avg_first_time, 1),
-#             "returning_visits": round(avg_returning, 1)
-#         },
-#         "top_pages": [{"url": p[0], "title": p[1], "views": p[2]} for p in top_pages],
-#         "top_sources": [{"source": s[0], "count": s[1]} for s in top_sources],
-#         "device_stats": {d[0]: d[1] for d in device_stats if d[0]}
-#     }
-
-
 @router.get("/{project_id}/summary")
 def get_summary(
-    project_id: int,
-    days: int,
+    project_id: int, 
+    days: int , 
     db: Session = Depends(get_db),
     current_user: Optional[models.User] = Depends(get_current_user_optional)
 ):
-    # -----------------------------------
-    # 1. Project & permission check
-    # -----------------------------------
-    project = db.query(models.Project).filter(
-        models.Project.id == project_id
-    ).first()
-
+    # Check if project exists and user has access
+    project = db.query(models.Project).filter(models.Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-
+    
+    # If user is authenticated, check if they own the project
     if current_user and project.user_id and project.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
-
-    # -----------------------------------
-    # 2. Date range calculation (IST → UTC)
-    # -----------------------------------
-    start_date_ist = utils.get_ist_start_of_day(days - 1)
-    start_date_utc = start_date_ist.astimezone(pytz.UTC)
-
-    # -----------------------------------
-    # 3. TOTAL VISITS (FILTERED BY DAYS) ✅ FIX
-    # -----------------------------------
-    total_visits = db.query(models.Visit).filter(
-        models.Visit.project_id == project_id,
-        models.Visit.visited_at >= start_date_utc
-    ).count()
-
-    # -----------------------------------
-    # 4. UNIQUE VISITORS (FILTERED BY DAYS) ✅ FIX
-    # -----------------------------------
-    unique_visitors = db.query(
-        func.count(func.distinct(models.Visit.visitor_id))
-    ).filter(
-        models.Visit.project_id == project_id,
-        models.Visit.visited_at >= start_date_utc
+    
+    # Total visits
+    total_visits = db.query(models.Visit).filter(models.Visit.project_id == project_id).count()
+    
+    # Unique visitors
+    unique_visitors = db.query(func.count(func.distinct(models.Visit.visitor_id))).filter(
+        models.Visit.project_id == project_id
     ).scalar()
-
-    # -----------------------------------
-    # 5. LIVE VISITORS (Last 5 minutes)
-    # -----------------------------------
+    
+    # Live visitors (last 5 minutes)
     five_min_ago = datetime.utcnow() - timedelta(minutes=5)
-    live_visitors = db.query(
-        func.count(func.distinct(models.Visit.visitor_id))
-    ).filter(
+    live_visitors = db.query(func.count(func.distinct(models.Visit.visitor_id))).filter(
         models.Visit.project_id == project_id,
         models.Visit.visited_at >= five_min_ago
     ).scalar()
-
-    # -----------------------------------
-    # 6. DAILY STATS (Period Based)
-    # -----------------------------------
-    from sqlalchemy import case
-
+    
+    # Daily stats for specified number of days - OPTIMIZED
+    from sqlalchemy import case, cast, Date
+    
+    # IST calculation
+    start_date_ist = utils.get_ist_start_of_day(days - 1)
+    start_date_utc = start_date_ist.astimezone(pytz.UTC)
+    
     dialect_name = db.bind.dialect.name
-    ist_date_expr = utils.get_ist_date_expr(
-        models.Visit.visited_at, dialect_name
-    )
-
+    ist_date_expr = utils.get_ist_date_expr(models.Visit.visited_at, dialect_name)
+    
+    # Single query to get all stats grouped by date - COUNTING ACTUAL PAGEVIEWS
     daily_data = db.query(
-        ist_date_expr.label("visit_date"),
-        func.count(models.PageView.id).label("page_views"),
-        func.count(func.distinct(models.Visit.visitor_id)).label("unique_visits"),
+        ist_date_expr.label('visit_date'),
+        func.count(models.PageView.id).label('page_views'),
+        func.count(func.distinct(models.Visit.visitor_id)).label('unique_visits'),
+        func.count(func.distinct(case((models.Visit.is_unique == True, models.Visit.visitor_id), else_=None))).label('first_time_visits'),
         func.count(func.distinct(
-            case((models.Visit.is_unique == True, models.Visit.visitor_id), else_=None)
-        )).label("first_time_visits"),
-        func.count(func.distinct(
-            case((models.Visit.is_unique == False, models.Visit.visitor_id), else_=None)
-        )).label("returning_visits")
+            case(
+                (models.Visit.is_unique == False, models.Visit.visitor_id),
+                else_=None
+            )
+        )).label('returning_visits')
     ).join(
         models.PageView, models.Visit.id == models.PageView.visit_id
     ).filter(
         models.Visit.project_id == project_id,
         models.Visit.visited_at >= start_date_utc
     ).group_by(ist_date_expr).all()
-
+    
+    # Create a dict for quick lookup
     stats_dict = {
         row.visit_date: {
-            "page_views": row.page_views,
-            "unique_visits": row.unique_visits,
-            "first_time_visits": row.first_time_visits or 0,
-            "returning_visits": row.returning_visits or 0,
+            'page_views': row.page_views,
+            'unique_visits': row.unique_visits,
+            'first_time_visits': row.first_time_visits or 0,
+            'returning_visits': row.returning_visits or 0
         }
         for row in daily_data
     }
-
+    
+    # Build daily stats array with all days (including days with no data)
     daily_stats = []
     for i in range(days - 1, -1, -1):
         day_start_ist = utils.get_ist_start_of_day(i)
         day_date = day_start_ist.date()
-
-        stats = stats_dict.get(day_date) or stats_dict.get(
-            str(day_date),
-            {"page_views": 0, "unique_visits": 0, "first_time_visits": 0, "returning_visits": 0}
-        )
-
+        
+        # SQL returns date as string in some dialects, handle conversion if needed
+        # stats_dict keys are date objects if cast(..., Date) worked correctly
+        stats = stats_dict.get(day_date)
+        if stats is None:
+            # Fallback for string keys
+            stats = stats_dict.get(str(day_date), {'page_views': 0, 'unique_visits': 0, 'first_time_visits': 0, 'returning_visits': 0})
+        
         daily_stats.append({
             "date": day_start_ist.strftime("%a, %d %b %Y"),
-            "page_views": stats["page_views"],
-            "unique_visits": stats["unique_visits"],
-            "first_time_visits": stats["first_time_visits"],
-            "returning_visits": stats["returning_visits"],
+            "page_views": stats['page_views'],
+            "unique_visits": stats['unique_visits'],
+            "first_time_visits": stats['first_time_visits'],
+            "returning_visits": stats['returning_visits']
         })
-
-    # -----------------------------------
-    # 7. ALL TIME DAILY STATS (NO FILTER)
-    # -----------------------------------
+    
+    # Get ALL historical data (no date limit)
     all_time_data = db.query(
-        ist_date_expr.label("visit_date"),
-        func.count(models.PageView.id).label("page_views"),
-        func.count(func.distinct(models.Visit.visitor_id)).label("unique_visits"),
+        ist_date_expr.label('visit_date'),
+        func.count(models.PageView.id).label('page_views'),
+        func.count(func.distinct(models.Visit.visitor_id)).label('unique_visits'),
+        func.count(func.distinct(case((models.Visit.is_unique == True, models.Visit.visitor_id), else_=None))).label('first_time_visits'),
         func.count(func.distinct(
-            case((models.Visit.is_unique == True, models.Visit.visitor_id), else_=None)
-        )).label("first_time_visits"),
-        func.count(func.distinct(
-            case((models.Visit.is_unique == False, models.Visit.visitor_id), else_=None)
-        )).label("returning_visits")
+            case(
+                (models.Visit.is_unique == False, models.Visit.visitor_id),
+                else_=None
+            )
+        )).label('returning_visits')
     ).join(
         models.PageView, models.Visit.id == models.PageView.visit_id
     ).filter(
         models.Visit.project_id == project_id
     ).group_by(ist_date_expr).order_by(ist_date_expr).all()
-
+    
+    # Build all-time daily stats
     all_daily_stats = []
     for row in all_time_data:
+        # Handle both date objects and strings
         row_date = row.visit_date
         if isinstance(row_date, str):
             try:
                 row_date = datetime.strptime(row_date, "%Y-%m-%d").date()
             except:
                 pass
-
+                
         all_daily_stats.append({
-            "date": row_date.strftime("%a, %d %b %Y") if hasattr(row_date, "strftime") else str(row_date),
+            "date": row_date.strftime("%a, %d %b %Y") if hasattr(row_date, 'strftime') else str(row_date),
             "page_views": row.page_views,
             "unique_visits": row.unique_visits,
             "first_time_visits": row.first_time_visits or 0,
-            "returning_visits": row.returning_visits or 0,
+            "returning_visits": row.returning_visits or 0
         })
-
-    # -----------------------------------
-    # 8. AVERAGES (Period Based)
-    # -----------------------------------
-    total_days = len(daily_stats) or 1
-
-    averages = {
-        "page_views": round(sum(d["page_views"] for d in daily_stats) / total_days, 1),
-        "unique_visits": round(sum(d["unique_visits"] for d in daily_stats) / total_days, 1),
-        "first_time_visits": round(sum(d["first_time_visits"] for d in daily_stats) / total_days, 1),
-        "returning_visits": round(sum(d["returning_visits"] for d in daily_stats) / total_days, 1),
-    }
-
-    # -----------------------------------
-    # 9. TOP PAGES / SOURCES / DEVICES
-    # -----------------------------------
+    
+    # Calculate averages
+    total_days = len(daily_stats)
+    avg_page_views = sum(d["page_views"] for d in daily_stats) / total_days if total_days > 0 else 0
+    avg_unique_visits = sum(d["unique_visits"] for d in daily_stats) / total_days if total_days > 0 else 0
+    avg_first_time = sum(d["first_time_visits"] for d in daily_stats) / total_days if total_days > 0 else 0
+    avg_returning = sum(d["returning_visits"] for d in daily_stats) / total_days if total_days > 0 else 0
+    
+    # Top pages
     top_pages = db.query(
         models.Page.url,
         models.Page.title,
@@ -404,36 +201,39 @@ def get_summary(
     ).filter(
         models.Page.project_id == project_id
     ).order_by(desc(models.Page.total_views)).limit(5).all()
-
+    
+    # Top traffic sources
     top_sources = db.query(
         models.TrafficSource.source_name,
-        func.sum(models.TrafficSource.visit_count).label("count")
+        func.sum(models.TrafficSource.visit_count).label('count')
     ).filter(
         models.TrafficSource.project_id == project_id
-    ).group_by(models.TrafficSource.source_name).order_by(desc("count")).limit(5).all()
-
+    ).group_by(models.TrafficSource.source_name).order_by(desc('count')).limit(5).all()
+    
+    # Device stats
     device_stats = db.query(
         models.Visit.device,
-        func.count(models.Visit.id)
+        func.count(models.Visit.id).label('count')
     ).filter(
         models.Visit.project_id == project_id
     ).group_by(models.Visit.device).all()
-
-    # -----------------------------------
-    # 10. RESPONSE
-    # -----------------------------------
+    
     return {
         "total_visits": total_visits,
         "unique_visitors": unique_visitors,
         "live_visitors": live_visitors,
         "daily_stats": daily_stats,
-        "all_daily_stats": all_daily_stats,
-        "averages": averages,
+        "all_daily_stats": all_daily_stats,  # Complete historical data
+        "averages": {
+            "page_views": round(avg_page_views, 1),
+            "unique_visits": round(avg_unique_visits, 1),
+            "first_time_visits": round(avg_first_time, 1),
+            "returning_visits": round(avg_returning, 1)
+        },
         "top_pages": [{"url": p[0], "title": p[1], "views": p[2]} for p in top_pages],
         "top_sources": [{"source": s[0], "count": s[1]} for s in top_sources],
-        "device_stats": {d[0]: d[1] for d in device_stats if d[0]},
+        "device_stats": {d[0]: d[1] for d in device_stats if d[0]}
     }
-
 
 @router.get("/{project_id}/summary-view")
 def get_summary_view(
@@ -532,7 +332,9 @@ def get_summary_view(
     avg_returning = sum(d["returning_visits"] for d in daily_stats) / total_days if total_days > 0 else 0
     
     return {
-        
+        "total_visits": total_visits,
+        "unique_visitors": unique_visitors,
+        "live_visitors": live_visitors,
         "daily_stats": daily_stats,
         "averages": {
             "page_views": round(avg_page_views, 1),

@@ -23,22 +23,38 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         origin = request.headers.get("origin")
         
-        response = await call_next(request)
+        # List of allowed origins
+        allowed_origins = [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:5173",  # Vite dev server
+            "http://127.0.0.1:5173"   # Vite dev server
+        ]
         
-        # Add CORS headers for all origins
-        response.headers["Access-Control-Allow-Origin"] = origin or "*"
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-        
-        # Handle preflight requests
+        # Handle preflight requests first
         if request.method == "OPTIONS":
             response = Response()
-            response.headers["Access-Control-Allow-Origin"] = origin or "*"
+            if origin in allowed_origins:
+                response.headers["Access-Control-Allow-Origin"] = origin
+            else:
+                response.headers["Access-Control-Allow-Origin"] = "*"
             response.headers["Access-Control-Allow-Credentials"] = "true"
             response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-            
+            response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
+            response.headers["Access-Control-Max-Age"] = "86400"
+            return response
+        
+        response = await call_next(request)
+        
+        # Add CORS headers for all responses
+        if origin in allowed_origins:
+            response.headers["Access-Control-Allow-Origin"] = origin
+        else:
+            response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
+        
         return response
 
 # ---------------------------------------------------

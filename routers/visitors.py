@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import utils
 from typing import Optional
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pytz import timezone
 
 router = APIRouter()
 security = HTTPBearer(auto_error=False)
@@ -112,13 +113,155 @@ def get_visitor_activity(
 @router.get("/{project_id}/activity-view")
 def get_visitor_activity_view(
     project_id: int, 
-    limit: int = 1000, 
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    limit: Optional[int] = None,
     db: Session = Depends(get_db),
     current_user: Optional[models.User] = Depends(get_current_user_optional)
 ):
-    """Dedicated endpoint for Visitor Activity Page"""
-    # Simply calls the existing logic for now, but provides a unique route for the page
-    return get_visitor_activity(project_id, limit, db, current_user)
+    """Dedicated endpoint for Visitor Activity Page with date filtering"""
+    try:
+        print(f"🔍 Getting visitor activity view for project {project_id}")
+        print(f"📅 Date range: {start_date} to {end_date}")
+        print(f"📊 Limit: {limit}")
+        
+        # Check if project exists
+        project = db.query(models.Project).filter(models.Project.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        # If user is authenticated, check if they own the project
+        if current_user and project.user_id and project.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Build query with date filtering
+        query = db.query(models.Visit).filter(models.Visit.project_id == project_id)
+        
+        # Apply date filtering if provided
+        if start_date and end_date:
+            try:
+                # Parse dates - handle both YYYY-MM-DD and ISO formats
+                if 'T' in start_date:
+                    # ISO format with time
+                    start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                else:
+                    # YYYY-MM-DD format - set to start of day in IST
+                    ist = timezone('Asia/Kolkata')
+                    start_dt = ist.localize(datetime.strptime(start_date, '%Y-%m-%d').replace(hour=0, minute=0, second=0))
+                    start_dt = start_dt.astimezone(timezone('UTC'))
+                
+                if 'T' in end_date:
+                    # ISO format with time
+                    end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                else:
+                    # YYYY-MM-DD format - set to end of day in IST
+                    ist = timezone('Asia/Kolkata')
+                    end_dt = ist.localize(datetime.strptime(end_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59))
+                    end_dt = end_dt.astimezone(timezone('UTC'))
+                
+                print(f"🔍 Backend date filtering: {start_dt} to {end_dt}")
+                
+                query = query.filter(
+                    models.Visit.visited_at >= start_dt,
+                    models.Visit.visited_at <= end_dt
+                )
+            except ValueError as e:
+                print(f"❌ Date parsing error: {e}")
+                # Continue without date filtering if parsing fails
+                pass
+        
+        # Get all visits filtered by date range - apply limit only if provided
+        if limit is not None:
+            visits = query.order_by(desc(models.Visit.visited_at)).limit(limit).all()
+        else:
+            visits = query.order_by(desc(models.Visit.visited_at)).all()
+        
+        print(f"🔍 Backend: Returning {len(visits)} visits (limit: {limit})")
+        
+        # Pre-load page views for all visits to avoid N+1 queries
+        visit_ids = [v.id for v in visits]
+        page_views_map = {}
+        if visit_ids:
+            page_views = db.query(models.PageView).filter(
+                models.PageView.visit_id.in_(visit_ids)
+            ).order_by(models.PageView.viewed_at).all()
+            
+            # Group page views by visit_id
+            for pv in page_views:
+                if pv.visit_id not in page_views_map:
+                    page_views_map[pv.visit_id] = []
+                page_views_map[pv.visit_id].append(pv)
+        
+        # Get session counts for all visitors in one query
+        visitor_ids = list(set([v.visitor_id for v in visits]))
+        session_counts = {}
+        if visitor_ids:
+            session_counts_query = db.query(
+                models.Visit.visitor_id,
+                func.count(models.Visit.id).label('session_count')
+            ).filter(
+                models.Visit.project_id == project_id,
+                models.Visit.visitor_id.in_(visitor_ids)
+            ).group_by(models.Visit.visitor_id).all()
+            
+            for visitor_id, count in session_counts_query:
+                session_counts[visitor_id] = count
+        
+        result = []
+        for v in visits:
+            page_views = page_views_map.get(v.id, [])
+            page_views_count = len(page_views)
+            
+            # Get session count for this visitor
+            total_sessions = session_counts.get(v.visitor_id, 0)
+            
+            # Build page views list
+            page_views_list = [{
+                "url": pv.url,
+                "title": pv.title,
+                "time_spent": pv.time_spent,
+                "viewed_at": pv.viewed_at
+            } for pv in page_views]
+            
+            result.append({
+                "id": v.id,
+                "visitor_id": v.visitor_id,
+                "ip_address": v.ip_address,
+                "country": v.country,
+                "state": v.state,
+                "city": v.city,
+                "isp": v.isp,
+                "device": v.device,
+                "browser": v.browser,
+                "os": v.os,
+                "screen_resolution": v.screen_resolution,
+                "language": v.language,
+                "timezone": v.timezone,
+                "local_time": v.local_time,
+                "local_time_formatted": v.local_time_formatted,
+                "timezone_offset": v.timezone_offset,
+                "referrer": v.referrer,
+                "entry_page": v.entry_page,
+                "exit_page": v.exit_page,
+                "session_duration": v.session_duration,
+                "visited_at": v.visited_at,
+                "page_views": page_views_count if page_views_count > 0 else 0,
+                "page_views_list": page_views_list,
+                "total_sessions": total_sessions
+            })
+        
+        print(f"✅ Successfully returning {len(result)} visitor records")
+        return result
+
+    except HTTPException:
+        # Re-raise HTTP exceptions (404, 403, etc.)
+        raise
+    except Exception as e:
+        print(f"❌ Error in get_visitor_activity_view: {e}")
+        import traceback
+        traceback.print_exc()
+        # Return empty list instead of raising error
+        return []
 
 @router.get("/{project_id}/path/{visitor_id}")
 def get_visitor_path(project_id: int, visitor_id: str, db: Session = Depends(get_db)):
@@ -274,7 +417,101 @@ def get_visitors_by_page(project_id: int, page_url: str, db: Session = Depends(g
     }
 
 
-@router.get("/{project_id}/map")
+@router.get("/{project_id}/geographic-data")
+def get_geographic_data(
+    project_id: int,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional)
+):
+    """Get geographic distribution data with date filtering for Reports page"""
+    try:
+        print(f"🌍 Getting geographic data for project {project_id}")
+        print(f"📅 Date range: {start_date} to {end_date}")
+        
+        # Check if project exists
+        project = db.query(models.Project).filter(models.Project.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        # If user is authenticated, check if they own the project
+        if current_user and project.user_id and project.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Build query with date filtering
+        query = db.query(models.Visit).filter(models.Visit.project_id == project_id)
+        
+        # Apply date filtering if provided
+        if start_date and end_date:
+            try:
+                # Parse dates - handle both YYYY-MM-DD and ISO formats
+                if 'T' in start_date:
+                    # ISO format with time
+                    start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                else:
+                    # YYYY-MM-DD format - set to start of day in IST
+                    ist = timezone('Asia/Kolkata')
+                    start_dt = ist.localize(datetime.strptime(start_date, '%Y-%m-%d').replace(hour=0, minute=0, second=0))
+                    start_dt = start_dt.astimezone(timezone('UTC'))
+                
+                if 'T' in end_date:
+                    # ISO format with time
+                    end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                else:
+                    # YYYY-MM-DD format - set to end of day in IST
+                    ist = timezone('Asia/Kolkata')
+                    end_dt = ist.localize(datetime.strptime(end_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59))
+                    end_dt = end_dt.astimezone(timezone('UTC'))
+                
+                print(f"🌍 Backend date filtering: {start_dt} to {end_dt}")
+                
+                query = query.filter(
+                    models.Visit.visited_at >= start_dt,
+                    models.Visit.visited_at <= end_dt
+                )
+            except ValueError as e:
+                print(f"❌ Date parsing error: {e}")
+                # Continue without date filtering if parsing fails
+                pass
+        
+        # Get geographic distribution
+        locations = query.filter(
+            models.Visit.country.isnot(None)
+        ).with_entities(
+            models.Visit.country,
+            models.Visit.state,
+            models.Visit.city,
+            func.count(models.Visit.id).label('count')
+        ).group_by(
+            models.Visit.country,
+            models.Visit.state,
+            models.Visit.city
+        ).order_by(func.count(models.Visit.id).desc()).all()
+        
+        print(f"🌍 Found {len(locations)} geographic locations")
+        
+        result = []
+        for country, state, city, count in locations:
+            result.append({
+                "country": country or "Unknown",
+                "state": state or "",
+                "city": city or "",
+                "count": count
+            })
+        
+        print(f"✅ Returning {len(result)} geographic records")
+        return result
+
+    except HTTPException:
+        # Re-raise HTTP exceptions (404, 403, etc.)
+        raise
+    except Exception as e:
+        print(f"❌ Error in get_geographic_data: {e}")
+        import traceback
+        traceback.print_exc()
+        # Return empty list instead of raising error
+        return []
 def get_visitor_map(project_id: int, db: Session = Depends(get_db)):
     locations = db.query(
         models.Visit.country,

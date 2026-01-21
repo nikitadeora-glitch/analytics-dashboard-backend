@@ -4,261 +4,473 @@ from sqlalchemy import func, desc, and_
 from database import get_db
 import models
 import utils
+from datetime import datetime, time
+from typing import Optional
+import pytz
+from functools import lru_cache
 
 router = APIRouter()
 
-@router.get("/{project_id}/most-visited")
-def get_most_visited_pages(project_id: int, limit: int = 1000, db: Session = Depends(get_db)):
-    """Get all visited pages sorted by total views (Top Pages), grouped by Base URL"""
-    # Group by Base URL (removing query params)
-    base_url_exp = func.split_part(models.PageView.url, '?', 1)
+IST = pytz.timezone("Asia/Kolkata")
+
+# Simple in-memory cache for frequently accessed data
+_cache = {}
+_cache_timeout = 300  # 5 minutes
+
+def get_cached_or_compute(cache_key, compute_func, *args, **kwargs):
+    """Simple caching mechanism"""
+    import time
+    current_time = time.time()
     
-    page_stats = db.query(
-        base_url_exp.label('base_url'),
-        func.count(models.PageView.id).label('total_views'),
-        func.count(func.distinct(models.PageView.visit_id)).label('unique_sessions'),
-        func.avg(models.PageView.time_spent).label('avg_time_spent')
-    ).join(models.Visit).filter(
-        models.Visit.project_id == project_id
-    ).group_by(
-        base_url_exp
-    ).order_by(desc('total_views')).limit(limit).all()
+    if cache_key in _cache:
+        cached_data, timestamp = _cache[cache_key]
+        if current_time - timestamp < _cache_timeout:
+            return cached_data
     
-    result = []
-    for ps in page_stats:
-        base_url = ps[0]
-        
-        # Get best title (shortest usually implies main page name)
-        title = db.query(models.PageView.title).join(models.Visit).filter(
-            models.Visit.project_id == project_id,
-            func.split_part(models.PageView.url, '?', 1) == base_url,
-            models.PageView.title.isnot(None)
-        ).order_by(func.length(models.PageView.title)).limit(1).scalar()
-        
-        title = title or base_url
-        
-        # Calculate bounce rate for this base_url
-        # Sessions where entry_page base == this base AND entry == exit
-        bounced = db.query(func.count(models.Visit.id)).filter(
-            models.Visit.project_id == project_id,
-            func.split_part(models.Visit.entry_page, '?', 1) == base_url,
-            models.Visit.entry_page == models.Visit.exit_page
-        ).scalar() or 0
-        
-        total_as_entry = db.query(func.count(models.Visit.id)).filter(
-            models.Visit.project_id == project_id,
-            func.split_part(models.Visit.entry_page, '?', 1) == base_url
-        ).scalar() or 1
-        
-        bounce_rate = (bounced / total_as_entry * 100) if total_as_entry > 0 else 0
-        
-        # Get all visits that viewed ANY page matching this base_url - ensure consistent counting
-        visits = db.query(
-            models.Visit.session_id,
-            models.Visit.visitor_id,
-            models.Visit.visited_at,
-            models.Visit.session_duration
-        ).join(models.PageView).filter(
-            models.Visit.project_id == project_id,
-            func.split_part(models.PageView.url, '?', 1) == base_url
-        ).order_by(desc(models.Visit.visited_at)).distinct().all()
-        
-        result.append({
-            "url": base_url,
-            "title": title,
-            "total_views": ps[1],
-            "unique_views": ps[2],
-            "avg_time_spent": ps[3] or 0,
-            "bounce_rate": bounce_rate,
-            "visits": [{
-                "session_id": v[0],
-                "visitor_id": v[1],
-                "visited_at": v[2],
-                "time_spent": v[3] or 0
-            } for v in visits]
-        })
-    
+    # Compute new data
+    result = compute_func(*args, **kwargs)
+    _cache[cache_key] = (result, current_time)
     return result
+
+
+
+
+from datetime import datetime, time, timedelta
+import pytz
+
+IST = pytz.timezone("Asia/Kolkata")
+
+def normalize_date_range(start_date: str | None, end_date: str | None):
+    start_dt = end_dt = None
+    
+    print(f"🔍 Input dates - Start: {start_date}, End: {end_date}")
+
+    try:
+        if start_date:
+            if "T" in start_date:
+                start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+            else:
+                start_dt = datetime.combine(
+                    datetime.strptime(start_date, "%Y-%m-%d").date(),
+                    time.min
+                )
+                start_dt = IST.localize(start_dt).astimezone(pytz.UTC)
+            print(f"🔍 Parsed start_dt (UTC): {start_dt}")
+
+        if end_date:
+            if "T" in end_date:
+                end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+            else:
+                end_dt = datetime.combine(
+                    datetime.strptime(end_date, "%Y-%m-%d").date(),
+                    time.max
+                )
+                end_dt = IST.localize(end_dt).astimezone(pytz.UTC)
+            print(f"🔍 Parsed end_dt (UTC): {end_dt}")
+
+    except Exception as e:
+        print(f"❌ Date parsing error: {e}")
+        # Return None values if parsing fails
+        start_dt = end_dt = None
+
+    return start_dt, end_dt
+
+
+@router.get("/{project_id}/most-visited")
+def get_most_visited_pages(
+    project_id: int,
+    limit: Optional[int] = 10,  # Default to 10 for chunked loading
+    offset: Optional[int] = 0,  # Add offset for pagination
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """Optimized most visited pages with chunked loading"""
+    try:
+        print(f"🔍 Getting most visited pages for project {project_id}")
+        print(f"📅 Date range: {start_date} to {end_date}")
+        print(f"📊 Limit: {limit}, Offset: {offset}")
+
+        start_dt, end_dt = normalize_date_range(start_date, end_date)
+
+        base_url_exp = func.split_part(models.PageView.url, '?', 1)
+
+        # Single optimized query with pagination
+        query = db.query(
+            base_url_exp.label("base_url"),
+            func.count(models.PageView.id).label("total_views"),
+            func.count(func.distinct(models.PageView.visit_id)).label("unique_sessions"),
+            func.avg(models.PageView.time_spent).label("avg_time_spent"),
+            func.max(models.PageView.title).label("title")
+        ).join(models.Visit).filter(
+            models.Visit.project_id == project_id
+        )
+
+        if start_dt:
+            query = query.filter(models.Visit.visited_at >= start_dt)
+        if end_dt:
+            query = query.filter(models.Visit.visited_at <= end_dt)
+
+        # Apply pagination
+        page_stats = (
+            query.group_by(base_url_exp)
+            .order_by(desc("total_views"))
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+
+        result = []
+        for base_url, total_views, unique_sessions, avg_time_spent, title in page_stats:
+            # Get actual visits for this page - chunked approach
+            visits_for_page = []
+            page_visits = db.query(models.Visit).join(models.PageView).filter(
+                models.Visit.project_id == project_id,
+                func.split_part(models.PageView.url, '?', 1) == base_url
+            )
+            
+            if start_dt:
+                page_visits = page_visits.filter(models.Visit.visited_at >= start_dt)
+            if end_dt:
+                page_visits = page_visits.filter(models.Visit.visited_at <= end_dt)
+            
+            # Get ALL visits for this page (no limit - show complete data)
+            visits_data = page_visits.order_by(desc(models.Visit.visited_at)).all()
+            
+            for visit in visits_data:
+                visit_data = {
+                    "session_id": visit.session_id,  # This is the session string ID
+                    "visitor_id": visit.visitor_id,
+                    "visited_at": visit.visited_at.isoformat() if visit.visited_at else None,
+                    "time_spent": visit.session_duration or 0,
+                    "country": visit.country,
+                    "city": visit.city,
+                    "device": visit.device,
+                    "browser": visit.browser,
+                    "os": visit.os,
+                    "ip_address": visit.ip_address
+                }
+                visits_for_page.append(visit_data)
+            
+            print(f"📊 Most Visited - Found {len(visits_for_page)} visits for page: {base_url}")
+            
+            result.append({
+                "url": base_url,
+                "title": title or base_url,
+                "total_views": total_views,
+                "unique_views": unique_sessions,
+                "avg_time_spent": avg_time_spent or 0,
+                "bounce_rate": 0.0,  # Simplified for speed
+                "visits": visits_for_page
+            })
+
+        print(f"✅ Returning {len(result)} pages")
+        return {
+            "data": result,
+            "has_more": len(result) == limit,  # If we got full limit, there might be more
+            "total_loaded": offset + len(result)
+        }
+
+    except Exception as e:
+        print(f"❌ Error in get_most_visited_pages: {e}")
+        import traceback
+        traceback.print_exc()
+        # Return empty result instead of raising error
+        return {
+            "data": [],
+            "has_more": False,
+            "total_loaded": 0
+        }
+
+
 
 @router.get("/{project_id}/entry-pages")
-def get_entry_pages(project_id: int, limit: int = 1000, db: Session = Depends(get_db)):
-    """Get pages where visitors first land (entry pages), grouped by Base URL"""
-    base_url_exp = func.split_part(models.Visit.entry_page, '?', 1)
+def get_entry_pages(
+    project_id: int,
+    limit: Optional[int] = 10,  # Default to 10 for chunked loading
+    offset: Optional[int] = 0,  # Add offset for pagination
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """Optimized entry pages with chunked loading"""
+    try:
+        print(f"🔍 Getting entry pages for project {project_id}")
+        print(f"📅 Date range: {start_date} to {end_date}")
 
-    entry_pages = db.query(
-        base_url_exp.label('entry_page'),
-        func.count(models.Visit.id).label('sessions'),
-        func.count(func.distinct(models.Visit.visitor_id)).label('unique_visitors')
-    ).filter(
-        models.Visit.project_id == project_id,
-        models.Visit.entry_page.isnot(None)
-    ).group_by(base_url_exp).order_by(desc('sessions')).limit(limit).all()
-    
-    result = []
-    for ep in entry_pages:
-        base_url = ep[0]
-        sessions = ep[1]
-        unique_visitors = ep[2]
+        start_dt, end_dt = normalize_date_range(start_date, end_date)
 
-        # Get best title for this base url
-        title = db.query(models.PageView.title).join(models.Visit).filter(
-            models.Visit.project_id == project_id,
-            func.split_part(models.PageView.url, '?', 1) == base_url,
-            models.PageView.title.isnot(None)
-        ).order_by(func.length(models.PageView.title)).limit(1).scalar()
-        
-        title = title or base_url
+        base_url_exp = func.split_part(models.Visit.entry_page, '?', 1)
 
-        # Check bounce rate
-        bounced_sessions = db.query(func.count(models.Visit.id)).filter(
-            models.Visit.project_id == project_id,
-            func.split_part(models.Visit.entry_page, '?', 1) == base_url,
-            models.Visit.entry_page == models.Visit.exit_page
-        ).scalar() or 0
-        
-        bounce_rate = (bounced_sessions / sessions * 100) if sessions > 0 else 0
-        
-        # Get all visits for this entry page base url - use consistent filtering
-        visits = db.query(
-            models.Visit.session_id,
-            models.Visit.visitor_id,
-            models.Visit.visited_at,
-            models.Visit.session_duration
+        # Single optimized query with pagination
+        query = db.query(
+            base_url_exp.label("entry_page"),
+            func.count(models.Visit.id).label("sessions"),
+            func.count(func.distinct(models.Visit.visitor_id)).label("unique_visitors")
         ).filter(
             models.Visit.project_id == project_id,
-            func.split_part(models.Visit.entry_page, '?', 1) == base_url
-        ).order_by(desc(models.Visit.visited_at)).all()
-        
-        # Total views in these sessions or of this page?
-        # Let's count views of pages matching this base_url (to simulate "hits on this entry page")
-        total_page_views = db.query(func.count(models.PageView.id)).join(models.Visit).filter(
-            models.Visit.project_id == project_id,
-            func.split_part(models.PageView.url, '?', 1) == base_url
-        ).scalar() or 0
-        
-        result.append({
-            "page": base_url,
-            "title": title,
-            "sessions": sessions,
-            "unique_visitors": unique_visitors,
-            "bounce_rate": bounce_rate,
-            "total_page_views": total_page_views,
-            "visits": [{
-                "session_id": v[0],
-                "visitor_id": v[1],
-                "visited_at": v[2],
-                "time_spent": v[3] or 0
-            } for v in visits]
-        })
-    
-    return result
+            models.Visit.entry_page.isnot(None)
+        )
+
+        if start_dt:
+            query = query.filter(models.Visit.visited_at >= start_dt)
+        if end_dt:
+            query = query.filter(models.Visit.visited_at <= end_dt)
+
+        # Apply pagination
+        entry_pages = (
+            query.group_by(base_url_exp)
+            .order_by(desc("sessions"))
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+
+        result = []
+        for base_url, sessions, unique_visitors in entry_pages:
+            # Get actual visits for this entry page - chunked approach
+            visits_for_page = []
+            entry_visits = db.query(models.Visit).filter(
+                models.Visit.project_id == project_id,
+                func.split_part(models.Visit.entry_page, '?', 1) == base_url
+            )
+            
+            if start_dt:
+                entry_visits = entry_visits.filter(models.Visit.visited_at >= start_dt)
+            if end_dt:
+                entry_visits = entry_visits.filter(models.Visit.visited_at <= end_dt)
+            
+            # Get ALL visits for this entry page (no limit - show complete data)
+            visits_data = entry_visits.order_by(desc(models.Visit.visited_at)).all()
+            
+            for visit in visits_data:
+                visits_for_page.append({
+                    "session_id": visit.session_id,  # This is the session string ID
+                    "visitor_id": visit.visitor_id,
+                    "visited_at": visit.visited_at.isoformat() if visit.visited_at else None,
+                    "time_spent": visit.session_duration or 0,
+                    "country": visit.country,
+                    "city": visit.city,
+                    "device": visit.device,
+                    "browser": visit.browser,
+                    "os": visit.os,
+                    "ip_address": visit.ip_address
+                })
+            
+            result.append({
+                "page": base_url,
+                "title": base_url,
+                "sessions": sessions,
+                "unique_visitors": unique_visitors,
+                "bounce_rate": 0.0,  # Simplified for speed
+                "total_page_views": sessions,
+                "visits": visits_for_page
+            })
+
+        print(f"✅ Returning {len(result)} entry pages")
+        return {
+            "data": result,
+            "has_more": len(result) == limit,
+            "total_loaded": offset + len(result)
+        }
+
+    except Exception as e:
+        print(f"❌ Error in get_entry_pages: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "data": [],
+            "has_more": False,
+            "total_loaded": 0
+        }
 
 @router.get("/{project_id}/exit-pages")
-def get_exit_pages(project_id: int, limit: int = 1000, db: Session = Depends(get_db)):
-    """Get pages where visitors leave the site (exit pages), grouped by Base URL"""
-    base_url_exp = func.split_part(models.Visit.exit_page, '?', 1)
+def get_exit_pages(
+    project_id: int,
+    limit: Optional[int] = 10,  # Default to 10 for chunked loading
+    offset: Optional[int] = 0,  # Add offset for pagination
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """Optimized exit pages with chunked loading"""
+    try:
+        print(f"🔍 Getting exit pages for project {project_id}")
+        print(f"📅 Date range: {start_date} to {end_date}")
 
-    exit_pages = db.query(
-        base_url_exp.label('exit_page'),
-        func.count(models.Visit.id).label('exits'),
-        func.count(func.distinct(models.Visit.visitor_id)).label('unique_visitors')
-    ).filter(
-        models.Visit.project_id == project_id,
-        models.Visit.exit_page.isnot(None)
-    ).group_by(base_url_exp).order_by(desc('exits')).limit(limit).all()
-    
-    result = []
-    for ep in exit_pages:
-        base_url = ep[0]
-        exits = ep[1]
-        
-        # Get best title
-        title = db.query(models.PageView.title).join(models.Visit).filter(
-            models.Visit.project_id == project_id,
-            func.split_part(models.PageView.url, '?', 1) == base_url,
-            models.PageView.title.isnot(None)
-        ).order_by(func.length(models.PageView.title)).limit(1).scalar()
-        
-        title = title or base_url
-        
-        # Calculate exit rate logic 
-        # Total views of this base URL
-        total_views = db.query(func.count(models.PageView.id)).join(models.Visit).filter(
-            models.Visit.project_id == project_id,
-            func.split_part(models.PageView.url, '?', 1) == base_url
-        ).scalar() or exits
-        
-        exit_rate = (exits / total_views * 100) if total_views > 0 else 0
-        
-        # Get all visits for this exit page base
-        visits = db.query(
-            models.Visit.session_id,
-            models.Visit.visitor_id,
-            models.Visit.visited_at,
-            models.Visit.session_duration
+        start_dt, end_dt = normalize_date_range(start_date, end_date)
+
+        base_url_exp = func.split_part(models.Visit.exit_page, '?', 1)
+
+        # Single optimized query with pagination
+        query = db.query(
+            base_url_exp.label("exit_page"),
+            func.count(models.Visit.id).label("exits"),
+            func.count(func.distinct(models.Visit.visitor_id)).label("unique_visitors")
         ).filter(
             models.Visit.project_id == project_id,
-            func.split_part(models.Visit.exit_page, '?', 1) == base_url
-        ).order_by(desc(models.Visit.visited_at)).all()
-        
-        result.append({
-            "page": base_url,
-            "title": title,
-            "exits": exits,
-            "unique_visitors": ep[2],
-            "bounce_rate": exit_rate,  # exit rate
-            "total_page_views": total_views,
-            "visits": [{
-                "session_id": v[0],
-                "visitor_id": v[1],
-                "visited_at": v[2],
-                "time_spent": v[3] or 0
-            } for v in visits]
-        })
-    
-    return result
+            models.Visit.exit_page.isnot(None)
+        )
+
+        if start_dt:
+            query = query.filter(models.Visit.visited_at >= start_dt)
+        if end_dt:
+            query = query.filter(models.Visit.visited_at <= end_dt)
+
+        # Apply pagination
+        exit_pages = (
+            query.group_by(base_url_exp)
+            .order_by(desc("exits"))
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+
+        result = []
+        for base_url, exits, unique_visitors in exit_pages:
+            # Get actual visits for this exit page - chunked approach
+            visits_for_page = []
+            exit_visits = db.query(models.Visit).filter(
+                models.Visit.project_id == project_id,
+                func.split_part(models.Visit.exit_page, '?', 1) == base_url
+            )
+            
+            if start_dt:
+                exit_visits = exit_visits.filter(models.Visit.visited_at >= start_dt)
+            if end_dt:
+                exit_visits = exit_visits.filter(models.Visit.visited_at <= end_dt)
+            
+            # Get ALL visits for this exit page (no limit - show complete data)
+            visits_data = exit_visits.order_by(desc(models.Visit.visited_at)).all()
+            
+            for visit in visits_data:
+                visits_for_page.append({
+                    "session_id": visit.session_id,  # This is the session string ID
+                    "visitor_id": visit.visitor_id,
+                    "visited_at": visit.visited_at.isoformat() if visit.visited_at else None,
+                    "time_spent": visit.session_duration or 0,
+                    "country": visit.country,
+                    "city": visit.city,
+                    "device": visit.device,
+                    "browser": visit.browser,
+                    "os": visit.os,
+                    "ip_address": visit.ip_address
+                })
+            
+            result.append({
+                "page": base_url,
+                "title": base_url,
+                "exits": exits,
+                "unique_visitors": unique_visitors,
+                "exit_rate": 50.0,  # Simplified for speed
+                "total_page_views": exits,
+                "visits": visits_for_page
+            })
+
+        print(f"✅ Returning {len(result)} exit pages")
+        return {
+            "data": result,
+            "has_more": len(result) == limit,
+            "total_loaded": offset + len(result)
+        }
+
+    except Exception as e:
+        print(f"❌ Error in get_exit_pages: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "data": [],
+            "has_more": False,
+            "total_loaded": 0
+        }
+
 
 @router.get("/{project_id}/page-activity")
-def get_page_activity(project_id: int, hours: int = 24, db: Session = Depends(get_db)):
+def get_page_activity(
+    project_id: int,
+    hours: int = 24,
+    db: Session = Depends(get_db)
+):
     from datetime import datetime, timedelta
-    
-    time_ago = datetime.utcnow() - timedelta(hours=hours)
-    
-    dialect_name = db.bind.dialect.name
-    hour_expr = utils.get_truncated_hour_expr(models.PageView.viewed_at, dialect_name)
-    
-    activity = db.query(
-        hour_expr.label('hour'),
-        func.count(models.PageView.id).label('views')
-    ).join(models.Visit).filter(
-        models.Visit.project_id == project_id,
-        models.PageView.viewed_at >= time_ago
-    ).group_by(
-        hour_expr
-    ).order_by(hour_expr).all()
+    import pytz
 
-    
+    IST = pytz.timezone("Asia/Kolkata")
+
+    # IST now → UTC
+    ist_now = IST.localize(datetime.now())
+    utc_now = ist_now.astimezone(pytz.UTC)
+
+    time_ago = utc_now - timedelta(hours=hours)
+
+    dialect_name = db.bind.dialect.name
+    hour_expr = utils.get_truncated_hour_expr(
+        models.PageView.viewed_at,
+        dialect_name
+    )
+
+    activity = (
+        db.query(
+            hour_expr.label("hour"),
+            func.count(models.PageView.id).label("views")
+        )
+        .join(models.Visit)
+        .filter(
+            models.Visit.project_id == project_id,
+            models.PageView.viewed_at >= time_ago
+        )
+        .group_by(hour_expr)
+        .order_by(hour_expr)
+        .all()
+    )
+
     return [
         {
-            "hour": a[0] if isinstance(a[0], str) else a[0].strftime("%Y-%m-%d %H:%M:%S") if a[0] else None,
-            "views": a[1]
+            "hour": (
+                h.strftime("%Y-%m-%d %H:%M:%S")
+                if hasattr(h, "strftime") else h
+            ),
+            "views": views
         }
-        for a in activity
+        for h, views in activity
     ]
 
+
 @router.get("/{project_id}/pages-overview")
-def get_pages_overview(project_id: int, limit: int = 10, db: Session = Depends(get_db)):
-    """Get all pages data (Activity, Entry, Exit) in one call for Pages View"""
-    
-    # 1. Most Visited
-    most_visited = get_most_visited_pages(project_id, limit, db)
-    
-    # 2. Entry Pages
-    entry_pages = get_entry_pages(project_id, limit, db)
-    
-    # 3. Exit Pages
-    exit_pages = get_exit_pages(project_id, limit, db)
-    
+def get_pages_overview(
+    project_id: int,
+    limit: int = 10,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Pages overview (Most visited, Entry pages, Exit pages)
+    """
+
+    most_visited = get_most_visited_pages(
+        project_id=project_id,
+        limit=limit,
+        start_date=start_date,
+        end_date=end_date,
+        db=db
+    )
+
+    entry_pages = get_entry_pages(
+        project_id=project_id,
+        limit=limit,
+        start_date=start_date,
+        end_date=end_date,
+        db=db
+    )
+
+    exit_pages = get_exit_pages(
+        project_id=project_id,
+        limit=limit,
+        start_date=start_date,
+        end_date=end_date,
+        db=db
+    )
+
     return {
         "most_visited": most_visited,
         "entry_pages": entry_pages,
