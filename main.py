@@ -17,28 +17,51 @@ import os
 Base.metadata.create_all(bind=engine)
 
 # ---------------------------------------------------
-# Custom CORS Middleware (Allow All Origins with Credentials)
+# Custom CORS Middleware (Allow Specific Origins with Credentials)
 # ---------------------------------------------------
 class CustomCORSMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         origin = request.headers.get("origin")
         
-        # List of allowed origins
+        # Get frontend URL from environment, fallback to default
+        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+        
+        # List of allowed origins (both local and production)
         allowed_origins = [
+            # Local development
             "http://localhost:3000",
             "http://127.0.0.1:3000",
+            "http://localhost:3001",  # Vite dev server alternate port
+            "http://127.0.0.1:3001",  # Vite dev server alternate port
             "http://localhost:5173",  # Vite dev server
-            "http://127.0.0.1:5173"   # Vite dev server
+            "http://127.0.0.1:5173",  # Vite dev server
+            # Production domains
+            "https://seo.prpwebs.com",
+            "https://www.seo.prpwebs.com",
+            "https://api.seo.prpwebs.com",
+            # Environment-specific frontend URL
+            frontend_url,
         ]
+        
+        # Remove duplicates and None values
+        allowed_origins = list(set(filter(None, allowed_origins)))
         
         # Handle preflight requests first
         if request.method == "OPTIONS":
             response = Response()
-            if origin in allowed_origins:
+            # Only allow specific origins when credentials are involved
+            if origin and origin in allowed_origins:
                 response.headers["Access-Control-Allow-Origin"] = origin
+                response.headers["Access-Control-Allow-Credentials"] = "true"
+            elif origin:
+                # For unknown origins, don't allow credentials
+                response.headers["Access-Control-Allow-Origin"] = origin
+                response.headers["Access-Control-Allow-Credentials"] = "false"
             else:
-                response.headers["Access-Control-Allow-Origin"] = "*"
-            response.headers["Access-Control-Allow-Credentials"] = "true"
+                # No origin header, fallback to first allowed origin
+                response.headers["Access-Control-Allow-Origin"] = allowed_origins[0]
+                response.headers["Access-Control-Allow-Credentials"] = "false"
+                
             response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
             response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
             response.headers["Access-Control-Max-Age"] = "86400"
@@ -47,11 +70,18 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         
         # Add CORS headers for all responses
-        if origin in allowed_origins:
+        if origin and origin in allowed_origins:
             response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+        elif origin:
+            # For unknown origins, don't allow credentials
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "false"
         else:
-            response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Credentials"] = "true"
+            # No origin header, fallback to first allowed origin
+            response.headers["Access-Control-Allow-Origin"] = allowed_origins[0]
+            response.headers["Access-Control-Allow-Credentials"] = "false"
+            
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
         response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
         
