@@ -186,3 +186,19 @@ class ExitLinkClick(Base):
     url = Column(String, nullable=False)
     from_page = Column(String)
     clicked_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+class CartAction(Base):
+    """Track cart actions (add/remove from cart)"""
+    __tablename__ = "cart_actions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"))
+    visit_id = Column(Integer, ForeignKey("visits.id"))
+    action = Column(String, nullable=False)  # 'add_to_cart' or 'remove_from_cart'
+    product_id = Column(String)
+    product_name = Column(String)
+    product_url = Column(String)
+    page_url = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    
+    visit = relationship("Visit")

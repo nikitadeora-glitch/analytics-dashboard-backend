@@ -117,3 +117,10 @@ class PasswordResetConfirm(BaseModel):
 
 class GoogleLoginSchema(BaseModel):
     id_token: str
+
+class CartActionCreate(BaseModel):
+    action: str  # 'add_to_cart' or 'remove_from_cart'
+    product_id: Optional[str] = None
+    product_name: Optional[str] = None
+    product_url: Optional[str] = None
+    page_url: Optional[str] = None

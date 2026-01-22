@@ -755,9 +755,46 @@
   // Setup exit link tracking
   setupExitLinkTracking();
 
+  // ============================================
+  // CART ACTION TRACKING
+  // ============================================
+
+  function trackCartAction(action, productId, productName, productUrl) {
+    if (!visitId) {
+      log('⚠️ No visit ID, skipping cart action');
+      return;
+    }
+
+    const data = {
+      action: action, // 'add_to_cart' or 'remove_from_cart'
+      product_id: productId,
+      product_name: productName,
+      product_url: productUrl,
+      page_url: window.location.href
+    };
+
+    const apiUrl = `${CONFIG.apiUrl}analytics/${CONFIG.projectId}/cart-action/${visitId}`;
+
+    log('🛒 Tracking cart action:', data);
+
+    fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    })
+      .then(res => res.json())
+      .then(result => {
+        log('✅ Cart action tracked!', result);
+      })
+      .catch(err => {
+        log('❌ Cart action error:', err.message);
+      });
+  }
+
   // Public API
   window.Analytics = {
     trackPageView: (url, title) => trackPageView(url, title),
+    trackCartAction: (action, productId, productName, productUrl) => trackCartAction(action, productId, productName, productUrl),
     getVisitorId: getVisitorId,
     getSessionId: getSessionId,
     config: CONFIG

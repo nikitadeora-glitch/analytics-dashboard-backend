@@ -307,12 +307,37 @@ def get_referrers(project_id: int, db: Session = Depends(get_db)):
     return [{"referrer": r[0], "count": r[1]} for r in referrers]
 
 @router.get("/{project_id}/exit-links")
-def get_exit_links(project_id: int, limit: int = 100, db: Session = Depends(get_db)):
+def get_exit_links(
+    project_id: int, 
+    start_date: Optional[str] = None, 
+    end_date: Optional[str] = None,
+    limit: int = 100, 
+    db: Session = Depends(get_db)
+):
     """Get individual exit link clicks"""
-    # Get individual clicks ordered by most recent first
-    exit_clicks = db.query(models.ExitLinkClick).filter(
+    # Build base query
+    query = db.query(models.ExitLinkClick).filter(
         models.ExitLinkClick.project_id == project_id
-    ).order_by(desc(models.ExitLinkClick.clicked_at)).limit(limit).all()
+    )
+    
+    # Add date filtering if parameters are provided
+    if start_date and end_date:
+        try:
+            # Parse dates and create datetime range
+            start_datetime = datetime.strptime(start_date, "%Y-%m-%d")
+            end_datetime = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)  # Include end date
+            
+            query = query.filter(
+                models.ExitLinkClick.clicked_at >= start_datetime,
+                models.ExitLinkClick.clicked_at < end_datetime
+            )
+            print(f"📅 Exit Links - Filtering by date range: {start_datetime} to {end_datetime}")
+        except ValueError as e:
+            print(f"❌ Exit Links - Date parsing error: {e}")
+            # Continue without date filtering if dates are invalid
+    
+    # Get individual clicks ordered by most recent first
+    exit_clicks = query.order_by(desc(models.ExitLinkClick.clicked_at)).limit(limit).all()
     
     # Return individual click entries
     return [{

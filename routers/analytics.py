@@ -1191,6 +1191,87 @@ def track_exit_link(project_id: int, link_data: dict, request: Request, db: Sess
         "url": url
     }
 
+@router.post("/{project_id}/cart-action/{visit_id}")
+def track_cart_action(project_id: int, visit_id: int, cart_action: schemas.CartActionCreate, request: Request, db: Session = Depends(get_db)):
+    """Track cart actions (add to cart / remove from cart)"""
+
+    if _is_probable_bot_request(request):
+        _log_ignored(request, "cart_action")
+        return {
+            "message": "Ignored"
+        }
+    
+    # Verify visit exists
+    visit = db.query(models.Visit).filter(
+        models.Visit.id == visit_id,
+        models.Visit.project_id == project_id
+    ).first()
+    
+    if not visit:
+        raise HTTPException(status_code=404, detail="Visit not found")
+    
+    # Create cart action record
+    db_cart_action = models.CartAction(
+        project_id=project_id,
+        visit_id=visit_id,
+        action=cart_action.action,
+        product_id=cart_action.product_id,
+        product_name=cart_action.product_name,
+        product_url=cart_action.product_url,
+        page_url=cart_action.page_url
+    )
+    db.add(db_cart_action)
+    
+    # Also create a page view for this cart action to show in analytics
+    page_title = f"Cart Action: {cart_action.action}"
+    if cart_action.product_name:
+        page_title += f" - {cart_action.product_name}"
+    
+    # Create virtual page URL for cart action
+    virtual_page_url = f"{cart_action.page_url}#cart-{cart_action.action}"
+    if cart_action.product_id:
+        virtual_page_url += f"-{cart_action.product_id}"
+    
+    # Get or create page record for cart action
+    page = db.query(models.Page).filter(
+        models.Page.project_id == project_id,
+        models.Page.url == virtual_page_url
+    ).first()
+    
+    if not page:
+        page = models.Page(
+            project_id=project_id,
+            url=virtual_page_url,
+            title=page_title,
+            total_views=0,
+            unique_views=0
+        )
+        db.add(page)
+        db.flush()
+    
+    # Create page view for cart action
+    db_pageview = models.PageView(
+        visit_id=visit_id,
+        page_id=page.id,
+        url=virtual_page_url,
+        title=page_title,
+        time_spent=0,
+        scroll_depth=0
+    )
+    db.add(db_pageview)
+    
+    # Update page stats
+    page.total_views += 1
+    
+    db.commit()
+    db.refresh(db_cart_action)
+    
+    return {
+        "cart_action_id": db_cart_action.id,
+        "message": "Cart action tracked",
+        "virtual_page_url": virtual_page_url
+    }
+
 @router.post("/{project_id}/track")
 def track_visit(project_id: int, visit: schemas.VisitCreate, request: Request, db: Session = Depends(get_db)):
     import requests

@@ -426,6 +426,28 @@ def get_exit_pages(
             # Calculate exit rate
             exit_rate = (exit_count / total_page_visits * 100) if total_page_visits > 0 else 0.0
             
+            # Calculate bounce rate for exit pages
+            # Bounce rate = (sessions with only 1 page view / total sessions that viewed this page) * 100
+            
+            # Get all visit IDs that viewed this page
+            page_visit_ids = [row[0] for row in page_visits_query.distinct().all()]
+            
+            if page_visit_ids:
+                # Count page views per session for this page
+                session_page_counts = db.query(
+                    models.PageView.visit_id,
+                    func.count(models.PageView.id).label('page_count')
+                ).filter(
+                    models.PageView.visit_id.in_(page_visit_ids)
+                ).group_by(models.PageView.visit_id).all()
+                
+                # Calculate bounce rate
+                single_page_sessions = sum(1 for _, count in session_page_counts if count == 1)
+                total_sessions = len(session_page_counts)
+                bounce_rate = (single_page_sessions / total_sessions * 100) if total_sessions > 0 else 0.0
+            else:
+                bounce_rate = 0.0
+            
             # Get actual visits for this exit page - chunked approach
             visits_for_page = []
             exit_visits = db.query(models.Visit).filter(
@@ -461,6 +483,7 @@ def get_exit_pages(
                 "exits": exits,
                 "unique_visitors": unique_visitors,
                 "exit_rate": round(exit_rate, 1),  # Proper exit rate calculation
+                "bounce_rate": round(bounce_rate, 1),  # Proper bounce rate calculation
                 "total_page_views": exits,
                 "visits": visits_for_page
             })
