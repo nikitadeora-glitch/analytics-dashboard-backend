@@ -1417,3 +1417,64 @@ def track_visit(project_id: int, visit: schemas.VisitCreate, request: Request, d
         "is_duplicate": False,
         "is_unique_visitor": db_visit.is_unique
     }
+
+# ============================================
+# COOKIE MANAGEMENT ENDPOINTS (GDPR Compliance)
+# ============================================
+
+@router.post("/{project_id}/opt-out")
+def opt_out_tracking(project_id: int, request: Request, db: Session = Depends(get_db)):
+    """
+    Opt-out user from analytics tracking
+    Sets a cookie to prevent future tracking
+    """
+    # Check if project exists
+    project = db.query(models.Project).filter(models.Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # In a real implementation, this would set an HttpOnly cookie server-side
+    # For now, we return the opt-out confirmation
+    return {
+        "message": "Opt-out successful",
+        "project_id": project_id,
+        "instructions": "Please call Analytics.optOut() in your browser to complete opt-out"
+    }
+
+@router.post("/{project_id}/opt-in")
+def opt_in_tracking(project_id: int, request: Request, db: Session = Depends(get_db)):
+    """
+    Opt-in user to analytics tracking
+    Removes the opt-out cookie
+    """
+    # Check if project exists
+    project = db.query(models.Project).filter(models.Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    return {
+        "message": "Opt-in successful",
+        "project_id": project_id,
+        "instructions": "Please call Analytics.optIn() in your browser to complete opt-in"
+    }
+
+@router.get("/{project_id}/cookie-status")
+def get_cookie_status(project_id: int, request: Request, db: Session = Depends(get_db)):
+    """
+    Get current cookie and tracking status
+    """
+    # Check if project exists
+    project = db.query(models.Project).filter(models.Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Get visitor ID from request headers if available
+    visitor_id = request.headers.get("X-Visitor-ID")
+    
+    return {
+        "project_id": project_id,
+        "visitor_id": visitor_id,
+        "tracking_enabled": True,  # This would be determined by server-side cookie check
+        "cookie_domain": request.headers.get("Host"),
+        "secure_connection": request.url.scheme.startswith("https")
+    }

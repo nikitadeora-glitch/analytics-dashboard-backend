@@ -103,19 +103,97 @@
     }
   }
 
-  function getVisitorId() {
-    let id = localStorage.getItem('visitor_id');
-    if (!id) {
-      id = 'v_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
-      localStorage.setItem('visitor_id', id);
+  // ============================================
+  // COOKIE MANAGEMENT (StatCounter-style)
+  // ============================================
+
+  function setCookie(name, value, days) {
+    const expires = new Date();
+    expires.setTime(expires.getTime() + (days * 24 * 60 * 60 * 1000));
+    const expiresStr = 'expires=' + expires.toUTCString();
+    
+    // SameSite=Lax, Secure, HttpOnly for security
+    // Note: HttpOnly requires server-side setting, client-side can only set Secure and SameSite
+    const cookieString = name + '=' + value + ';' + expiresStr + ';path=/;SameSite=Lax;Secure';
+    
+    // Only set Secure flag on HTTPS
+    if (window.location.protocol === 'https:') {
+      document.cookie = cookieString;
+    } else {
+      // For HTTP, remove Secure flag
+      document.cookie = name + '=' + value + ';' + expiresStr + ';path=/;SameSite=Lax';
     }
-    return id;
+    
+    log('🍪 Set cookie:', name, value);
+  }
+
+  function getCookie(name) {
+    const nameEQ = name + '=';
+    const ca = document.cookie.split(';');
+    for (let i = 0; i < ca.length; i++) {
+      let c = ca[i];
+      while (c.charAt(0) === ' ') c = c.substring(1, c.length);
+      if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
+    }
+    return null;
+  }
+
+  function deleteCookie(name) {
+    document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:01 UTC;path=/;SameSite=Lax;';
+  }
+
+  function generateVisitorId() {
+    // Generate UUID v4-like identifier
+    return 'v_' + Date.now() + '_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  }
+
+  function getVisitorId() {
+    // Check if user has opted out
+    if (getCookie('analytics_opt_out') === 'true') {
+      log('🚫 User has opted out of tracking');
+      return null;
+    }
+
+    let visitorId = getCookie('visitor_id');
+    
+    if (!visitorId) {
+      // First visit - generate new visitor ID
+      visitorId = generateVisitorId();
+      setCookie('visitor_id', visitorId, 730); // 2 years = 730 days
+      log('🆕 New visitor ID generated:', visitorId);
+    } else {
+      log('🔄 Returning visitor ID:', visitorId);
+    }
+    
+    return visitorId;
+  }
+
+  // Opt-out functions for GDPR compliance
+  function optOut() {
+    setCookie('analytics_opt_out', 'true', 365); // 1 year opt-out
+    deleteCookie('visitor_id');
+    deleteCookie('session_id');
+    log('🚫 User opted out of analytics tracking');
+  }
+
+  function optIn() {
+    deleteCookie('analytics_opt_out');
+    log('✅ User opted in to analytics tracking');
+  }
+
+  function isOptedOut() {
+    return getCookie('analytics_opt_out') === 'true';
   }
 
   function getSessionId() {
+    // Check if user has opted out
+    if (getCookie('analytics_opt_out') === 'true') {
+      return null;
+    }
+
     const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
-    let sessionId = sessionStorage.getItem('session_id');
-    let lastActivity = sessionStorage.getItem('last_activity');
+    let sessionId = getCookie('session_id');
+    let lastActivity = getCookie('last_activity');
 
     const now = Date.now();
 
@@ -123,16 +201,17 @@
     if (sessionId && lastActivity) {
       const timeSinceLastActivity = now - parseInt(lastActivity);
       if (timeSinceLastActivity < SESSION_TIMEOUT) {
-        // Session still valid, update last activity
-        sessionStorage.setItem('last_activity', now.toString());
+        // Session still valid, update last activity (extend for 30 more minutes)
+        setCookie('last_activity', now.toString(), 0.02); // ~30 minutes in days
         return sessionId;
       }
     }
 
     // Create new session
-    sessionId = 's_' + now + '_' + Math.random().toString(36).substring(2, 9);
-    sessionStorage.setItem('session_id', sessionId);
-    sessionStorage.setItem('last_activity', now.toString());
+    sessionId = 's_' + now + '_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    setCookie('session_id', sessionId, 0.02); // ~30 minutes in days
+    setCookie('last_activity', now.toString(), 0.02);
+    log('🆕 New session ID generated:', sessionId);
     return sessionId;
   }
 
@@ -467,8 +546,22 @@
       return;
     }
 
+    // Check if user has opted out
+    if (isOptedOut()) {
+      log('🚫 User has opted out - skipping tracking');
+      return;
+    }
+
     if (!isLikelyHuman()) {
       log('🤖 Likely automated traffic, skipping analytics');
+      return;
+    }
+
+    const visitorId = getVisitorId();
+    const sessionId = getSessionId();
+    
+    if (!visitorId || !sessionId) {
+      log('❌ Could not generate visitor or session ID');
       return;
     }
 
@@ -476,8 +569,8 @@
     const trafficSource = detectTrafficSource();
 
     const data = {
-      visitor_id: getVisitorId(),
-      session_id: getSessionId(),
+      visitor_id: visitorId,
+      session_id: sessionId,
       referrer: document.referrer || 'direct',
       entry_page: window.location.href,
       device: getDevice(),
@@ -797,7 +890,11 @@
     trackCartAction: (action, productId, productName, productUrl) => trackCartAction(action, productId, productName, productUrl),
     getVisitorId: getVisitorId,
     getSessionId: getSessionId,
-    config: CONFIG
+    config: CONFIG,
+    // GDPR compliance functions
+    optOut: optOut,
+    optIn: optIn,
+    isOptedOut: isOptedOut
   };
 
   log('✅ Ready!');
