@@ -27,12 +27,25 @@ async def send_email_async(recipient: str, subject: str, body: str):
     smtp_server = os.getenv("MAIL_SERVER", "smtp.gmail.com")
     smtp_port = int(os.getenv("MAIL_PORT", 587))
     
+    # Enhanced debugging - Log all environment variables
+    print("\n=== EMAIL CONFIGURATION DEBUG ===")
+    print(f"MAIL_USERNAME: {'SET' if sender_email else 'NOT SET'}")
+    print(f"MAIL_PASSWORD: {'SET' if password else 'NOT SET'}")
+    print(f"MAIL_SERVER: {smtp_server}")
+    print(f"MAIL_PORT: {smtp_port}")
+    print(f"All ENV vars: {[k for k in os.environ.keys() if 'MAIL' in k.upper()]}")
+    
     # Validate configuration
     if not all([sender_email, password]):
-        logger.error("Email configuration is incomplete. Check your .env file.")
+        error_msg = "Email configuration is incomplete. Check your .env file."
+        logger.error(error_msg)
+        print(f"❌ {error_msg}")
         return False
     
-    logger.info(f"Attempting to send email to {recipient} via {smtp_server}:{smtp_port}")
+    print(f"\n📧 Attempting to send email to {recipient} via {smtp_server}:{smtp_port}")
+    print(f"📧 From: {sender_email}")
+    print(f"📧 To: {recipient}")
+    print(f"📧 Subject: {subject}")
     
     try:
         # Create message
@@ -62,18 +75,30 @@ async def send_email_async(recipient: str, subject: str, body: str):
             logger.info("Successfully authenticated with SMTP server")
             
             # Send the email
-            logger.info("Sending email...")
-            server.send_message(message)
+            print("📧 Sending email...")
+            result = server.send_message(message)
+            print(f"📧 Email sent successfully to {recipient}")
+            print(f"📧 Server response: {result}")
             logger.info(f"Email sent successfully to {recipient}")
             
             return True
             
     except smtplib.SMTPAuthenticationError as e:
-        logger.error(f"SMTP Authentication Error: {e}")
-        logger.error("Please check your email credentials and ensure 'Less secure app access' is enabled in your Google account.")
+        error_msg = f"SMTP Authentication Error: {e}"
+        logger.error(error_msg)
+        print(f"❌ {error_msg}")
+        print("❌ Please check your email credentials and ensure 'Less secure app access' is enabled in your Google account.")
+        print("❌ Or use an App Password if 2FA is enabled.")
     except smtplib.SMTPException as e:
-        logger.error(f"SMTP Error: {e}")
+        error_msg = f"SMTP Error: {e}"
+        logger.error(error_msg)
+        print(f"❌ {error_msg}")
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}")
+        error_msg = f"Unexpected error: {str(e)}"
+        logger.error(error_msg)
+        print(f"❌ {error_msg}")
+        import traceback
+        print("❌ Full traceback:")
+        traceback.print_exc()
     
     return False

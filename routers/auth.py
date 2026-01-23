@@ -294,8 +294,8 @@ async def forgot_password(
 
         db.commit()
 
-        # Create reset link - Force port 3000
-        FRONTEND_URL = "http://localhost:3000"
+        # Create reset link - Use environment variable
+        FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
         reset_link = f"{FRONTEND_URL}/reset-password?token={reset_token}"
 
 
@@ -304,6 +304,7 @@ async def forgot_password(
 
         # Send email
         try:
+            print(f"\n📧 Attempting to send password reset email...")
             email_sent = await send_email_async(
                 recipient=email,
                 subject="Password Reset Request - State Counter",
@@ -311,7 +312,7 @@ async def forgot_password(
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                     <h2>Password Reset Request</h2>
                     <p>Click the link below to reset your password. This link will expire in 10 minutes:</p>
-                    <a href="{{reset_link}}" style="background: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin: 20px 0;">
+                    <a href="{reset_link}" style="background: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin: 20px 0;">
                         Reset Password
                     </a>
                     <p>Or copy this link: {reset_link}</p>
@@ -319,13 +320,28 @@ async def forgot_password(
                 </div>
                 """
             )
-            if not email_sent:
-                print("Failed to send email")
-                return {"message": "Failed to send password reset email. Please try again later."}
-            return {"message": "If your email is registered, you will receive a password reset link"}
+            
+            if email_sent:
+                print(f"✅ Password reset email sent successfully to {email}")
+                return {"message": "If your email is registered, you will receive a password reset link"}
+            else:
+                print(f"❌ Failed to send password reset email to {email}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to send password reset email. Please try again later."
+                )
+                
+        except HTTPException:
+            # Re-raise HTTP exceptions
+            raise
         except Exception as e:
-            print(f"Error sending email: {str(e)}")
-            return {"message": "An error occurred while sending the password reset email."}
+            print(f"❌ Error sending password reset email: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="An error occurred while sending the password reset email."
+            )
 
     except HTTPException as e:
         # Re-raise HTTP exceptions as-is (like our "User not found" error)
