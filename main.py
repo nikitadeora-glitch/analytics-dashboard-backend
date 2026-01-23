@@ -10,10 +10,8 @@ from database import engine, get_db, Base
 from routers import projects, analytics, visitors, pages, traffic_sources, reports, auth, leads
 import models
 import os
-
-# ---------------------------------------------------
-# Create DB tables
-# ---------------------------------------------------
+from logging_config import *
+logger = logging.getLogger("app")
 Base.metadata.create_all(bind=engine)
 
 # ---------------------------------------------------
@@ -88,12 +86,59 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
         return response
 
 # ---------------------------------------------------
+# Request Logging Middleware
+# ---------------------------------------------------
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        import time
+        
+        # Start time
+        start_time = time.time()
+        
+        # Log incoming request
+        logger.info(f"📥 {request.method} {request.url.path}")
+        
+        # Process request
+        try:
+            response = await call_next(request)
+            
+            # Calculate response time
+            process_time = time.time() - start_time
+            
+            # Log response
+            status_emoji = "✅" if response.status_code < 400 else "❌"
+            logger.info(
+                f"{status_emoji} {request.method} {request.url.path} "
+                f"→ {response.status_code} ({process_time:.3f}s)"
+            )
+            
+            # Add response time header
+            response.headers["X-Process-Time"] = str(process_time)
+            
+            return response
+            
+        except Exception as e:
+            # Calculate response time
+            process_time = time.time() - start_time
+            
+            # Log error
+            logger.error(
+                f"❌ {request.method} {request.url.path} "
+                f"→ ERROR ({process_time:.3f}s): {str(e)}",
+                exc_info=True
+            )
+            raise
+
+# ---------------------------------------------------
 # FastAPI App
 # ---------------------------------------------------
 app = FastAPI(title="State Counter Analytics API")
 
 # Add custom CORS middleware
 app.add_middleware(CustomCORSMiddleware)
+
+# Add request logging middleware
+app.add_middleware(RequestLoggingMiddleware)
 
 # ---------------------------------------------------
 # Routers
@@ -119,7 +164,8 @@ def health_check():
     """Enhanced health check that includes email configuration status"""
     import os
     from datetime import datetime
-    
+    import time
+
     # Check email configuration
     email_config = {
         "mail_username": bool(os.getenv("MAIL_USERNAME")),
