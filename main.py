@@ -116,7 +116,35 @@ def root():
 
 @app.get("/health")
 def health_check():
-    return {"status": "healthy"}
+    """Enhanced health check that includes email configuration status"""
+    import os
+    from datetime import datetime
+    
+    # Check email configuration
+    email_config = {
+        "mail_username": bool(os.getenv("MAIL_USERNAME")),
+        "mail_password": bool(os.getenv("MAIL_PASSWORD")),
+        "mail_server": os.getenv("MAIL_SERVER", "smtp.gmail.com"),
+        "mail_port": os.getenv("MAIL_PORT", "587"),
+        "frontend_url": os.getenv("FRONTEND_URL", "http://localhost:3000")
+    }
+    
+    email_configured = all([
+        email_config["mail_username"],
+        email_config["mail_password"]
+    ])
+    
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "version": "1.0.0",
+        "email_config": {
+            "configured": email_configured,
+            "server": email_config["mail_server"],
+            "port": email_config["mail_port"],
+            "frontend_url": email_config["frontend_url"]
+        }
+    }
 
 # ---------------------------------------------------
 # Analytics Script Serve

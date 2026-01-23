@@ -1,5 +1,6 @@
 import smtplib
 import ssl
+import asyncio
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os
@@ -14,7 +15,7 @@ load_dotenv()
 
 async def send_email_async(recipient: str, subject: str, body: str):
     """
-    Send an email using SMTP with enhanced error handling
+    Send an email using SMTP with enhanced error handling and timeout
     
     Args:
         recipient: Email address of the recipient
@@ -47,6 +48,31 @@ async def send_email_async(recipient: str, subject: str, body: str):
     print(f"📧 To: {recipient}")
     print(f"📧 Subject: {subject}")
     
+    try:
+        # Run the synchronous SMTP operations in a thread pool with timeout
+        loop = asyncio.get_event_loop()
+        result = await asyncio.wait_for(
+            loop.run_in_executor(None, _send_email_sync, recipient, subject, body, sender_email, password, smtp_server, smtp_port),
+            timeout=30.0  # 30 second timeout
+        )
+        return result
+            
+    except asyncio.TimeoutError:
+        error_msg = "Email sending timed out after 30 seconds"
+        logger.error(error_msg)
+        print(f"❌ {error_msg}")
+        return False
+    except Exception as e:
+        error_msg = f"Unexpected error: {str(e)}"
+        logger.error(error_msg)
+        print(f"❌ {error_msg}")
+        import traceback
+        print("❌ Full traceback:")
+        traceback.print_exc()
+        return False
+
+def _send_email_sync(recipient: str, subject: str, body: str, sender_email: str, password: str, smtp_server: str, smtp_port: int):
+    """Synchronous email sending function to be run in thread pool"""
     try:
         # Create message
         message = MIMEMultipart()
@@ -89,10 +115,12 @@ async def send_email_async(recipient: str, subject: str, body: str):
         print(f"❌ {error_msg}")
         print("❌ Please check your email credentials and ensure 'Less secure app access' is enabled in your Google account.")
         print("❌ Or use an App Password if 2FA is enabled.")
+        raise
     except smtplib.SMTPException as e:
         error_msg = f"SMTP Error: {e}"
         logger.error(error_msg)
         print(f"❌ {error_msg}")
+        raise
     except Exception as e:
         error_msg = f"Unexpected error: {str(e)}"
         logger.error(error_msg)
@@ -100,5 +128,4 @@ async def send_email_async(recipient: str, subject: str, body: str):
         import traceback
         print("❌ Full traceback:")
         traceback.print_exc()
-    
-    return False
+        raise

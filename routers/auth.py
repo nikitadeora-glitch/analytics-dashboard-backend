@@ -326,22 +326,15 @@ async def forgot_password(
                 return {"message": "If your email is registered, you will receive a password reset link"}
             else:
                 print(f"❌ Failed to send password reset email to {email}")
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Failed to send password reset email. Please try again later."
-                )
+                # Don't expose specific error details for security
+                return {"message": "If your email is registered, you will receive a password reset link"}
                 
-        except HTTPException:
-            # Re-raise HTTP exceptions
-            raise
         except Exception as e:
             print(f"❌ Error sending password reset email: {str(e)}")
             import traceback
             traceback.print_exc()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="An error occurred while sending the password reset email."
-            )
+            # Always return the same message for security (don't reveal if email exists or not)
+            return {"message": "If your email is registered, you will receive a password reset link"}
 
     except HTTPException as e:
         # Re-raise HTTP exceptions as-is (like our "User not found" error)
