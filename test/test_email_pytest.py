@@ -8,12 +8,22 @@ import pytest
 import asyncio
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Load environment variables - try production first, then local
+env_files = ['.env.production', '.env', '.env.local']
+loaded = False
+for env_file in env_files:
+    if os.path.exists(env_file):
+        load_dotenv(env_file)
+        loaded = True
+        print(f"Loaded environment from: {env_file}")
+        break
+
+if not loaded:
+    print("Warning: No .env file found, using system environment variables")
 
 # Add the current directory to Python path
 import sys
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from email_utils import send_email_async
 
@@ -24,8 +34,20 @@ def test_environment():
     found_files = [f for f in env_files if os.path.exists(f)]
     assert len(found_files) > 0, "No .env file found"
     
-    # Check required email variables
+    # Check required email variables (skip if in CI without credentials)
     required_vars = ['MAIL_USERNAME', 'MAIL_PASSWORD', 'MAIL_SERVER', 'MAIL_PORT']
+    missing_vars = []
+    
+    for var in required_vars:
+        value = os.getenv(var)
+        if not value:
+            missing_vars.append(var)
+    
+    # If we're in CI and missing email vars, skip the test
+    if missing_vars and os.getenv('CI'):
+        pytest.skip(f"Email credentials not available in CI environment: {missing_vars}")
+    
+    # For local development, require all vars
     for var in required_vars:
         value = os.getenv(var)
         assert value is not None, f"Required environment variable {var} is not set"
@@ -34,6 +56,10 @@ def test_environment():
 @pytest.mark.asyncio
 async def test_email_sending():
     """Test actual email sending with configured email"""
+    # Skip if in CI environment without email credentials
+    if os.getenv('CI') and not os.getenv('MAIL_USERNAME'):
+        pytest.skip("Email sending test skipped in CI environment")
+    
     # Get email from environment or use a test email
     test_email = os.getenv('MAIL_USERNAME')  # Send to self for testing
     
@@ -67,6 +93,10 @@ async def test_email_sending():
 
 def test_email_config_values():
     """Test that email configuration values are valid"""
+    # Skip if in CI environment without email credentials
+    if os.getenv('CI') and not os.getenv('MAIL_USERNAME'):
+        pytest.skip("Email config test skipped in CI environment")
+    
     mail_server = os.getenv('MAIL_SERVER')
     mail_port = os.getenv('MAIL_PORT')
     mail_username = os.getenv('MAIL_USERNAME')
