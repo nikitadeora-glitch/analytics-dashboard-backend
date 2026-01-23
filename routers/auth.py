@@ -263,7 +263,10 @@ async def forgot_password(
         user = db.query(User).filter(User.email == email).first()
         if not user:
             print(f"No user found with email: {email}")
-            return {"message": "If your email is registered, you will receive a password reset link"}
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
 
         # Generate reset token
         reset_token = secrets.token_urlsafe(32)
@@ -324,6 +327,9 @@ async def forgot_password(
             print(f"Error sending email: {str(e)}")
             return {"message": "An error occurred while sending the password reset email."}
 
+    except HTTPException as e:
+        # Re-raise HTTP exceptions as-is (like our "User not found" error)
+        raise e
     except Exception as e:
         print(f"Error in forgot_password: {str(e)}")
         raise HTTPException(
