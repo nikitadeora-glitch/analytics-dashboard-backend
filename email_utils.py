@@ -76,7 +76,7 @@ def _send_email_sync(recipient: str, subject: str, body: str, sender_email: str,
     try:
         # Create message
         message = MIMEMultipart()
-        message["From"] = f"Statify  <{sender_email}>"
+        message["From"] = f"State Counter Analytics <{sender_email}>"
         message["To"] = recipient
         message["Subject"] = subject
         

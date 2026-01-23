@@ -192,6 +192,21 @@ def health_check():
         }
     }
 
+@app.get("/debug/email")
+def debug_email_config():
+    """Debug endpoint to check email configuration (remove in production)"""
+    import os
+    
+    return {
+        "environment": os.getenv("ENV", "development"),
+        "mail_username": os.getenv("MAIL_USERNAME"),
+        "mail_password_set": bool(os.getenv("MAIL_PASSWORD")),
+        "mail_server": os.getenv("MAIL_SERVER"),
+        "mail_port": os.getenv("MAIL_PORT"),
+        "frontend_url": os.getenv("FRONTEND_URL"),
+        "all_mail_env_vars": {k: v for k, v in os.environ.items() if 'MAIL' in k.upper()}
+    }
+
 # ---------------------------------------------------
 # Analytics Script Serve
 # ---------------------------------------------------
