@@ -633,6 +633,106 @@ def get_visitors_at_location(
     
     return result
 
+@router.get("/{project_id}/visitor-detail/{visitor_id}")
+def get_visitor_detail(project_id: int, visitor_id: str, db: Session = Depends(get_db)):
+    """
+    StatCounter-style visitor detail endpoint.
+    Returns complete visitor profile with all sessions and navigation paths.
+    """
+    try:
+        print(f"🔍 Getting visitor detail for project {project_id}, visitor {visitor_id}")
+        
+        # Check if project exists
+        project = db.query(models.Project).filter(models.Project.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        # Get visitor's most recent visit for profile info
+        latest_visit = db.query(models.Visit).filter(
+            models.Visit.project_id == project_id,
+            models.Visit.visitor_id == visitor_id
+        ).order_by(desc(models.Visit.visited_at)).first()
+        
+        if not latest_visit:
+            raise HTTPException(status_code=404, detail="Visitor not found")
+        
+        # Count total sessions for this visitor
+        total_sessions = db.query(models.Visit).filter(
+            models.Visit.project_id == project_id,
+            models.Visit.visitor_id == visitor_id
+        ).count()
+        
+        # Get all sessions for this visitor
+        sessions = db.query(models.Visit).filter(
+            models.Visit.project_id == project_id,
+            models.Visit.visitor_id == visitor_id
+        ).order_by(desc(models.Visit.visited_at)).all()
+        
+        # Get all page views for all sessions
+        visit_ids = [s.id for s in sessions]
+        page_views_map = {}
+        if visit_ids:
+            page_views = db.query(models.PageView).filter(
+                models.PageView.visit_id.in_(visit_ids)
+            ).order_by(models.PageView.viewed_at).all()
+            
+            for pv in page_views:
+                if pv.visit_id not in page_views_map:
+                    page_views_map[pv.visit_id] = []
+                page_views_map[pv.visit_id].append({
+                    "url": pv.url,
+                    "title": pv.title,
+                    "timestamp": pv.viewed_at.strftime("%H:%M:%S") if pv.viewed_at else "",
+                    "viewed_at": pv.viewed_at
+                })
+        
+        # Build sessions response
+        sessions_data = []
+        for session in sessions:
+            session_page_views = page_views_map.get(session.id, [])
+            sessions_data.append({
+                "session_id": str(session.id),
+                "start_time": session.visited_at.isoformat() if session.visited_at else "",
+                "duration": session.session_duration or 0,
+                "referrer": session.referrer or "",
+                "entry_page": session.entry_page or "",
+                "exit_page": session.exit_page or "",
+                "pageviews": session_page_views
+            })
+        
+        # Build visitor profile
+        visitor_profile = {
+            "visitor_id": visitor_id,
+            "ip": latest_visit.ip_address or "",
+            "isp": latest_visit.isp or "",
+            "country": latest_visit.country or "",
+            "city": latest_visit.city or "",
+            "lat": latest_visit.latitude or 0.0,
+            "lng": latest_visit.longitude or 0.0,
+            "device": latest_visit.device or "",
+            "os": latest_visit.os or "",
+            "browser": latest_visit.browser or "",
+            "resolution": latest_visit.screen_resolution or "",
+            "returning_visits": total_sessions - 1,  # Subtract 1 to exclude current session
+            "first_seen": latest_visit.visited_at.isoformat() if latest_visit.visited_at else ""
+        }
+        
+        response = {
+            "visitor": visitor_profile,
+            "sessions": sessions_data
+        }
+        
+        print(f"✅ Successfully returning visitor detail with {len(sessions_data)} sessions")
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error in get_visitor_detail: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 @router.post("/{project_id}/bulk-sessions")
 def get_bulk_visitor_sessions(project_id: int, visitor_ids: list[str], db: Session = Depends(get_db)):
     """OPTIMIZED: Get sessions for multiple visitors in a single request"""
