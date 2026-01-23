@@ -157,7 +157,15 @@ app.include_router(leads.router, prefix="/api/lead", tags=["Leads"])
 # ---------------------------------------------------
 @app.get("/")
 def root():
-    return {"message": "State Counter Analytics API"}
+    return {
+        "message": "State Counter Analytics API", 
+        "status": "running",
+        "version": "1.0.0",
+        "endpoints": {
+            "health": "/health",
+            "debug_email": "/debug/email"
+        }
+    }
 
 @app.get("/health")
 def health_check():
