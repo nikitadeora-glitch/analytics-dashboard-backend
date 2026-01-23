@@ -86,8 +86,9 @@ def _send_email_sync(recipient: str, subject: str, body: str, sender_email: str,
         # Create SSL context
         context = ssl.create_default_context()
         
-        # Create secure connection with server and send email
-        with smtplib.SMTP(smtp_server, smtp_port) as server:
+        # Create secure connection with server and send email (with timeout)
+        logger.info(f"Connecting to SMTP server {smtp_server}:{smtp_port}...")
+        with smtplib.SMTP(smtp_server, smtp_port, timeout=10) as server:
             server.ehlo()
             
             # Start TLS encryption
@@ -109,6 +110,23 @@ def _send_email_sync(recipient: str, subject: str, body: str, sender_email: str,
             
             return True
             
+    except OSError as e:
+        # Network unreachable or connection refused
+        if e.errno == 101:  # Network is unreachable
+            error_msg = f"Network unreachable - Cannot connect to {smtp_server}:{smtp_port}"
+            logger.error(error_msg)
+            logger.error("Possible fixes:")
+            logger.error("  1. Check if port 587 is open in server firewall")
+            logger.error("  2. Verify server has internet access")
+            logger.error("  3. Try alternative SMTP port (465 for SSL)")
+            logger.error("  4. Check if outbound SMTP connections are blocked")
+        elif e.errno == 111:  # Connection refused
+            error_msg = f"Connection refused by {smtp_server}:{smtp_port}"
+            logger.error(error_msg)
+        else:
+            error_msg = f"Network error ({e.errno}): {e}"
+            logger.error(error_msg)
+        raise
     except smtplib.SMTPAuthenticationError as e:
         error_msg = f"SMTP Authentication Error: {e}"
         logger.error(error_msg)
