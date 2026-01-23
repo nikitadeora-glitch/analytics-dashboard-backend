@@ -86,10 +86,12 @@ class UserCreate(BaseModel):
     email: EmailStr
     company_name: Optional[str] = None  # Make optional
     password: str
+    utm: Optional[dict] = None  # UTM parameters object
 
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+    utm: Optional[dict] = None  # UTM parameters object
 
 class UserResponse(BaseModel):
     id: int
@@ -110,6 +112,7 @@ class Token(BaseModel):
 
 class PasswordResetRequest(BaseModel):
     email: EmailStr
+    utm: Optional[dict] = None  # UTM parameters object
 
 class PasswordResetConfirm(BaseModel):
     token: str
@@ -117,6 +120,7 @@ class PasswordResetConfirm(BaseModel):
 
 class GoogleLoginSchema(BaseModel):
     id_token: str
+    utm: Optional[dict] = None  # UTM parameters object
 
 class CartActionCreate(BaseModel):
     action: str  # 'add_to_cart' or 'remove_from_cart'

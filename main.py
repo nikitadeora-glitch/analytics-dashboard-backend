@@ -7,7 +7,7 @@ from starlette.responses import Response
 from sqlalchemy.orm import Session
 
 from database import engine, get_db, Base
-from routers import projects, analytics, visitors, pages, traffic_sources, reports, auth
+from routers import projects, analytics, visitors, pages, traffic_sources, reports, auth, leads
 import models
 import os
 
@@ -105,6 +105,7 @@ app.include_router(visitors.router, prefix="/api/visitors", tags=["Visitors"])
 app.include_router(pages.router, prefix="/api/pages", tags=["Pages"])
 app.include_router(traffic_sources.router, prefix="/api/traffic", tags=["Traffic Sources"])
 app.include_router(reports.router, prefix="/api/reports", tags=["Reports"])
+app.include_router(leads.router, prefix="/api/lead", tags=["Leads"])
 
 # ---------------------------------------------------
 # Root Routes

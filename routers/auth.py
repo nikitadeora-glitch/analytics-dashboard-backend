@@ -99,6 +99,10 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
 @router.post("/signup", response_model=Token)
 async def signup(user_data: UserCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """Register a new user"""
+    # Log UTM data if present
+    if user_data.utm:
+        print(f"🎯 UTM Data during signup: {user_data.utm}")
+    
     # Check if email already exists
     existing_user = db.query(User).filter(User.email == user_data.email).first()
     if existing_user:
@@ -158,6 +162,10 @@ async def signup(user_data: UserCreate, background_tasks: BackgroundTasks, db: S
 @router.post("/login", response_model=Token)
 def login(credentials: UserLogin, db: Session = Depends(get_db)):
     """Authenticate user and return tokens"""
+    # Log UTM data if present
+    if credentials.utm:
+        print(f"🎯 UTM Data during login: {credentials.utm}")
+    
     user = db.query(User).filter(User.email == credentials.email).first()
     
     if not user or not verify_password(credentials.password, user.hashed_password):
@@ -239,17 +247,16 @@ def get_current_user_info(current_user: User = Depends(get_current_user)):
     }
 @router.post("/forgot-password")
 async def forgot_password(
-    request: dict,
+    request: PasswordResetRequest,
     db: Session = Depends(get_db)
 ):
+    """Password reset request with UTM tracking"""
+    # Log UTM data if present
+    if request.utm:
+        print(f"🎯 UTM Data during password reset: {request.utm}")
+    
     try:
-        email = request.get('email')
-        if not email:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email is required"
-            )
-
+        email = request.email
         print(f"Received password reset request for email: {email}")
 
         # Find user by email
@@ -494,6 +501,10 @@ async def reset_password(
 
 @router.post("/google")
 def google_login(data: GoogleLoginSchema, db: Session = Depends(get_db)):
+    # Log UTM data if present
+    if data.utm:
+        print(f"🎯 UTM Data during Google login: {data.utm}")
+    
     # 1️⃣ Verify token
     try:
         payload = verify_google_token(data.id_token)
