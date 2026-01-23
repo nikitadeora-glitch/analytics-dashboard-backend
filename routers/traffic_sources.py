@@ -323,18 +323,31 @@ def get_exit_links(
     # Add date filtering if parameters are provided
     if start_date and end_date:
         try:
-            # Parse dates and create datetime range
-            start_datetime = datetime.strptime(start_date, "%Y-%m-%d")
-            end_datetime = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)  # Include end date
+            # Parse ISO datetime strings from frontend
+            from datetime import datetime
+            start_datetime = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            end_datetime = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
             
             query = query.filter(
                 models.ExitLinkClick.clicked_at >= start_datetime,
-                models.ExitLinkClick.clicked_at < end_datetime
+                models.ExitLinkClick.clicked_at <= end_datetime
             )
             print(f"📅 Exit Links - Filtering by date range: {start_datetime} to {end_datetime}")
         except ValueError as e:
             print(f"❌ Exit Links - Date parsing error: {e}")
-            # Continue without date filtering if dates are invalid
+            # Try fallback to date-only parsing
+            try:
+                start_datetime = datetime.strptime(start_date.split('T')[0], "%Y-%m-%d")
+                end_datetime = datetime.strptime(end_date.split('T')[0], "%Y-%m-%d") + timedelta(days=1)
+                
+                query = query.filter(
+                    models.ExitLinkClick.clicked_at >= start_datetime,
+                    models.ExitLinkClick.clicked_at < end_datetime
+                )
+                print(f"📅 Exit Links - Using fallback date parsing: {start_datetime} to {end_datetime}")
+            except ValueError as e2:
+                print(f"❌ Exit Links - Fallback date parsing also failed: {e2}")
+                # Continue without date filtering if dates are invalid
     
     # Get individual clicks ordered by most recent first
     exit_clicks = query.order_by(desc(models.ExitLinkClick.clicked_at)).limit(limit).all()

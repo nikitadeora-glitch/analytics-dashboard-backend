@@ -68,13 +68,13 @@ def get_projects(
     db: Session = Depends(get_db),
     current_user: Optional[models.User] = Depends(get_current_user_optional)
 ):
-    if current_user:
-        return db.query(models.Project).filter(
-            models.Project.user_id == current_user.id,
-            models.Project.is_active == True
-        ).all()
-
-    return db.query(models.Project).filter(models.Project.is_active == True).all()
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
+    return db.query(models.Project).filter(
+        models.Project.user_id == current_user.id,
+        models.Project.is_active == True
+    ).all()
 
 
 # =====================================================
@@ -85,15 +85,13 @@ def get_all_projects_stats(
     db: Session = Depends(get_db),
     current_user: Optional[models.User] = Depends(get_current_user_optional)
 ):
-    if current_user:
-        projects = db.query(models.Project).filter(
-            models.Project.user_id == current_user.id,
-            models.Project.is_active == True
-        ).all()
-    else:
-        projects = db.query(models.Project).filter(
-            models.Project.is_active == True
-        ).all()
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
+    projects = db.query(models.Project).filter(
+        models.Project.user_id == current_user.id,
+        models.Project.is_active == True
+    ).all()
 
     if not projects:
         return []
