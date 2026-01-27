@@ -6,12 +6,13 @@ from typing import Optional
 import secrets
 import os
 import bcrypt
+import uuid
 
 # Import models and schemas directly
 from models import User, PasswordReset
 from schemas import UserCreate, UserLogin, Token, PasswordResetRequest, PasswordResetConfirm, GoogleLoginSchema
 from database import get_db
-from email_utils import send_email_async
+from sendgrid_email import send_email
 import jwt
 from routers.google import verify_google_token
 
@@ -250,101 +251,89 @@ async def forgot_password(
     request: PasswordResetRequest,
     db: Session = Depends(get_db)
 ):
-    """Password reset request with UTM tracking"""
+    """Password reset request with UTM tracking using SendGrid"""
     # Log UTM data if present
     if request.utm:
         print(f"🎯 UTM Data during password reset: {request.utm}")
     
-    try:
-        email = request.email
-        print(f"Received password reset request for email: {email}")
+    email = request.email
+    print(f"Received password reset request for email: {email}")
 
-        # Find user by email
-        user = db.query(User).filter(User.email == email).first()
-        if not user:
-            print(f"No user found with email: {email}")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
+    # Find user by email
+    user = db.query(User).filter(User.email == email).first()
+    
+    # 🔐 SECURITY: same response always
+    if not user:
+        print(f"No user found with email: {email}")
+        return {"status": 1, "message": "If this email exists, reset link has been sent."}
 
-        # Generate reset token
-        reset_token = secrets.token_urlsafe(32)
-        expires_at = datetime.utcnow() + timedelta(minutes=10)
-        
-        print(f"Generated token: {reset_token}")
-        print(f"Token expires at (UTC): {expires_at}")
+    # Generate reset token
+    token = str(uuid.uuid4())
+    expiry = datetime.utcnow() + timedelta(minutes=15)
 
-        # Create or update password reset record
-        reset_record = db.query(PasswordReset).filter(
-            PasswordReset.email == email
-        ).first()
+    # Create or update password reset record
+    reset_record = db.query(PasswordReset).filter(
+        PasswordReset.email == email
+    ).first()
 
-        if reset_record:
-            reset_record.token = reset_token
-            reset_record.expires_at = expires_at
-            reset_record.used = False
-        else:
-            reset_record = PasswordReset(
-                email=email,
-                token=reset_token,
-                expires_at=expires_at
-            )
-            db.add(reset_record)
-
-        db.commit()
-
-        # Create reset link - Use environment variable
-        FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
-        reset_link = f"{FRONTEND_URL}/reset-password?token={reset_token}"
-
-
-        print(f"Sending password reset email to: {email}")
-        print(f"Reset link: {reset_link}")
-
-        # Send email
-        try:
-            print(f"\n📧 Attempting to send password reset email...")
-            email_sent = await send_email_async(
-                recipient=email,
-                subject="Password Reset Request - State Counter",
-                body=f"""
-                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                    <h2>Password Reset Request</h2>
-                    <p>Click the link below to reset your password. This link will expire in 10 minutes:</p>
-                    <a href="{reset_link}" style="background: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin: 20px 0;">
-                        Reset Password
-                    </a>
-                    <p>Or copy this link: {reset_link}</p>
-                    <p>This link will expire in 10 minutes.</p>
-                </div>
-                """
-            )
-            
-            if email_sent:
-                print(f"✅ Password reset email sent successfully to {email}")
-                return {"message": "If your email is registered, you will receive a password reset link"}
-            else:
-                print(f"❌ Failed to send password reset email to {email}")
-                # Don't expose specific error details for security
-                return {"message": "If your email is registered, you will receive a password reset link"}
-                
-        except Exception as e:
-            print(f"❌ Error sending password reset email: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            # Always return the same message for security (don't reveal if email exists or not)
-            return {"message": "If your email is registered, you will receive a password reset link"}
-
-    except HTTPException as e:
-        # Re-raise HTTP exceptions as-is (like our "User not found" error)
-        raise e
-    except Exception as e:
-        print(f"Error in forgot_password: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while processing your request"
+    if reset_record:
+        reset_record.token = token
+        reset_record.expires_at = expiry
+        reset_record.used = False
+    else:
+        reset_record = PasswordReset(
+            email=email,
+            token=token,
+            expires_at=expiry
         )
+        db.add(reset_record)
+
+    db.commit()
+
+    # Build reset link
+    reset_link = f"{os.getenv('FRONTEND_URL')}/reset-password?token={token}"
+
+    subject = f"{os.getenv('APP_NAME')} - Reset Password"
+    html = f"""
+    <div style="font-family:Arial">
+      <h2>Password Reset</h2>
+      <p>Click below to reset password:</p>
+      <a href="{reset_link}" style="padding:10px 14px;background:#111;color:#fff;text-decoration:none;border-radius:6px;">
+        Reset Password
+      </a>
+      <p>This link expires in 15 minutes.</p>
+    </div>
+    """
+
+    try:
+        send_email(
+            to_email=email,
+            subject=subject,
+            html=html,
+            text=f"Reset password: {reset_link}"
+        )
+        print(f"✅ Password reset email sent successfully to {email}")
+    except Exception as e:
+        print(f"❌ Error sending password reset email: {str(e)}")
+        # Still return success message for security
+        import traceback
+        traceback.print_exc()
+
+    return {"status": 1, "message": "If this email exists, reset link has been sent."}
+
+@router.get("/test-email")
+def test_email():
+    """Test email endpoint for SendGrid debugging"""
+    try:
+        send_email(
+            to_email="yourmail@gmail.com",
+            subject="SendGrid Test",
+            html="<b>Hello from FastAPI + SendGrid</b>",
+            text="Hello from FastAPI + SendGrid"
+        )
+        return {"ok": True, "message": "Test email sent successfully"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 @router.get("/verify-reset-token")
 async def verify_reset_token(

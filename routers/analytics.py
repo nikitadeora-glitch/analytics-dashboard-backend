@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import utils
+from utils import get_ist_start_of_day
 import re
 import pytz
 
@@ -92,7 +93,7 @@ def get_current_user_optional(
 #     from sqlalchemy import case, cast, Date
     
 #     # IST calculation
-#     start_date_ist = utils.get_ist_start_of_day(days - 1)
+#     start_date_ist = get_ist_start_of_day(days - 1)
 #     start_date_utc = start_date_ist.astimezone(pytz.UTC)
     
 #     dialect_name = db.bind.dialect.name
@@ -131,7 +132,7 @@ def get_current_user_optional(
 #     # Build daily stats array with all days (including days with no data)
 #     daily_stats = []
 #     for i in range(days - 1, -1, -1):
-#         day_start_ist = utils.get_ist_start_of_day(i)
+#         day_start_ist = get_ist_start_of_day(i)
 #         day_date = day_start_ist.date()
         
 #         # SQL returns date as string in some dialects, handle conversion if needed
@@ -259,11 +260,11 @@ def get_summary(
     # -----------------------------------
     # 2. Date range calculation (IST → UTC)
     # -----------------------------------
-    start_date_ist = utils.get_ist_start_of_day(days - 1)
+    start_date_ist = get_ist_start_of_day(days - 1)
     start_date_utc = start_date_ist.astimezone(pytz.UTC)
 
     # -----------------------------------
-    # 3. TOTAL VISITS (FILTERED BY DAYS) ✅ FIX
+    # 3. TOTAL VISITS (FILTERED BY DAYS) 
     # -----------------------------------
     total_visits = db.query(models.Visit).filter(
         models.Visit.project_id == project_id,
@@ -271,7 +272,7 @@ def get_summary(
     ).count()
 
     # -----------------------------------
-    # 4. UNIQUE VISITORS (FILTERED BY DAYS) ✅ FIX
+    # 4. UNIQUE VISITORS (FILTERED BY DAYS) 
     # -----------------------------------
     unique_visitors = db.query(
         func.count(func.distinct(models.Visit.visitor_id))
@@ -330,7 +331,7 @@ def get_summary(
 
     daily_stats = []
     for i in range(days - 1, -1, -1):
-        day_start_ist = utils.get_ist_start_of_day(i)
+        day_start_ist = get_ist_start_of_day(i)
         day_date = day_start_ist.date()
 
         stats = stats_dict.get(day_date) or stats_dict.get(
@@ -452,12 +453,20 @@ def get_summary_view(
     if current_user and project.user_id and project.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    # Total visits
-    total_visits = db.query(models.Visit).filter(models.Visit.project_id == project_id).count()
+    # IST calculation
+    start_date_ist = get_ist_start_of_day(days - 1)
+    start_date_utc = start_date_ist.astimezone(pytz.UTC)
     
-    # Unique visitors
+    # Total visits (FILTERED BY DAYS)
+    total_visits = db.query(models.Visit).filter(
+        models.Visit.project_id == project_id,
+        models.Visit.visited_at >= start_date_utc
+    ).count()
+    
+    # Unique visitors (FILTERED BY DAYS)
     unique_visitors = db.query(func.count(func.distinct(models.Visit.visitor_id))).filter(
-        models.Visit.project_id == project_id
+        models.Visit.project_id == project_id,
+        models.Visit.visited_at >= start_date_utc
     ).scalar()
     
     # Live visitors (last 5 minutes)
@@ -471,7 +480,7 @@ def get_summary_view(
     from sqlalchemy import case, cast, Date
     
     # IST calculation
-    start_date_ist = utils.get_ist_start_of_day(days - 1)
+    start_date_ist = get_ist_start_of_day(days - 1)
     start_date_utc = start_date_ist.astimezone(pytz.UTC)
     print(start_date_utc)
     
@@ -509,7 +518,7 @@ def get_summary_view(
     
     daily_stats = []
     for i in range(days - 1, -1, -1):
-        day_start_ist = utils.get_ist_start_of_day(i)
+        day_start_ist = get_ist_start_of_day(i)
         day_date = day_start_ist.date()
         
         stats = stats_dict.get(day_date)
@@ -532,7 +541,9 @@ def get_summary_view(
     avg_returning = sum(d["returning_visits"] for d in daily_stats) / total_days if total_days > 0 else 0
     
     return {
-        
+        "total_visits": total_visits,
+        "unique_visitors": unique_visitors,
+        "live_visitors": live_visitors,
         "daily_stats": daily_stats,
         "averages": {
             "page_views": round(avg_page_views, 1),
