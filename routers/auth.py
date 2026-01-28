@@ -246,6 +246,7 @@ def get_current_user_info(current_user: User = Depends(get_current_user)):
         "is_verified": current_user.is_verified,
         "created_at": current_user.created_at
     }
+
 @router.post("/forgot-password")
 async def forgot_password(
     request: PasswordResetRequest,
