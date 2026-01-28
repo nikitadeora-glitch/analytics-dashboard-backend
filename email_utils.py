@@ -1,11 +1,9 @@
-import smtplib
-import ssl
-import asyncio
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 import os
 import logging
 from dotenv import load_dotenv
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
+from typing import Optional
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -13,57 +11,74 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-async def send_email_async(recipient: str, subject: str, body: str):
+async def send_email_async(recipient: str, subject: str, body: str, html_body: Optional[str] = None):
     """
-    Send an email using SMTP with enhanced error handling and timeout
+    Send an email using SendGrid API
     
     Args:
         recipient: Email address of the recipient
         subject: Email subject
-        body: Email body (HTML)
+        body: Email body (plain text)
+        html_body: Email body (HTML) - optional, will use body if not provided
     """
-    # Get email configuration
-    sender_email = os.getenv("MAIL_USERNAME")
-    password = os.getenv("MAIL_PASSWORD")
-    smtp_server = os.getenv("MAIL_SERVER", "smtp.gmail.com")
-    smtp_port = int(os.getenv("MAIL_PORT", 587))
+    # Get SendGrid configuration
+    api_key = os.getenv("SENDGRID_API_KEY")
+    from_email = os.getenv("SENDGRID_FROM_EMAIL")
+    app_name = os.getenv("APP_NAME", "Statify")
     
-    # Enhanced debugging - Log all environment variables
-    print("\n=== EMAIL CONFIGURATION DEBUG ===")
-    print(f"MAIL_USERNAME: {'SET' if sender_email else 'NOT SET'}")
-    print(f"MAIL_PASSWORD: {'SET' if password else 'NOT SET'}")
-    print(f"MAIL_SERVER: {smtp_server}")
-    print(f"MAIL_PORT: {smtp_port}")
-    print(f"All ENV vars: {[k for k in os.environ.keys() if 'MAIL' in k.upper()]}")
+    # Enhanced debugging - Log configuration status
+    print("\n=== SENDGRID CONFIGURATION DEBUG ===")
+    print(f"SENDGRID_API_KEY: {'SET' if api_key else 'NOT SET'}")
+    print(f"SENDGRID_FROM_EMAIL: {'SET' if from_email else 'NOT SET'}")
+    print(f"APP_NAME: {app_name}")
     
     # Validate configuration
-    if not all([sender_email, password]):
-        error_msg = "Email configuration is incomplete. Check your .env file."
+    if not api_key:
+        error_msg = "SENDGRID_API_KEY is not set. Check your .env file."
+        logger.error(error_msg)
+        print(f"❌ {error_msg}")
+        return False
+        
+    if not from_email:
+        error_msg = "SENDGRID_FROM_EMAIL is not set. Check your .env file."
         logger.error(error_msg)
         print(f"❌ {error_msg}")
         return False
     
-    print(f"\n📧 Attempting to send email to {recipient} via {smtp_server}:{smtp_port}")
-    print(f"📧 From: {sender_email}")
+    print(f"\n📧 Attempting to send email to {recipient} via SendGrid")
+    print(f"📧 From: {from_email}")
     print(f"📧 To: {recipient}")
     print(f"📧 Subject: {subject}")
     
     try:
-        # Run the synchronous SMTP operations in a thread pool with timeout
-        loop = asyncio.get_event_loop()
-        result = await asyncio.wait_for(
-            loop.run_in_executor(None, _send_email_sync, recipient, subject, body, sender_email, password, smtp_server, smtp_port),
-            timeout=30.0  # 30 second timeout
+        # Create email message
+        message = Mail(
+            from_email=from_email,
+            to_emails=recipient,
+            subject=subject,
+            html_content=html_body or body,
+            plain_text_content=body
         )
-        return result
+        
+        # Send email using SendGrid API
+        sg = SendGridAPIClient(api_key)
+        response = sg.send(message)
+        
+        # Check response
+        if response.status_code == 202:
+            print(f"📧 Email sent successfully to {recipient}")
+            print(f"📧 SendGrid Response: {response.status_code}")
+            logger.info(f"Email sent successfully to {recipient}")
+            return True
+        else:
+            error_msg = f"SendGrid API returned status code: {response.status_code}"
+            logger.error(error_msg)
+            print(f"❌ {error_msg}")
+            print(f"❌ Response body: {response.body}")
+            return False
             
-    except asyncio.TimeoutError:
-        error_msg = "Email sending timed out after 30 seconds"
-        logger.error(error_msg)
-        print(f"❌ {error_msg}")
-        return False
     except Exception as e:
-        error_msg = f"Unexpected error: {str(e)}"
+        error_msg = f"Error sending email via SendGrid: {str(e)}"
         logger.error(error_msg)
         print(f"❌ {error_msg}")
         import traceback
@@ -71,79 +86,15 @@ async def send_email_async(recipient: str, subject: str, body: str):
         traceback.print_exc()
         return False
 
-def _send_email_sync(recipient: str, subject: str, body: str, sender_email: str, password: str, smtp_server: str, smtp_port: int):
-    """Synchronous email sending function to be run in thread pool"""
+def send_email(recipient: str, subject: str, body: str, html_body: Optional[str] = None):
+    """
+    Synchronous wrapper for send_email_async
+    """
+    import asyncio
     try:
-        # Create message
-        message = MIMEMultipart()
-        message["From"] = f"State Counter Analytics <{sender_email}>"
-        message["To"] = recipient
-        message["Subject"] = subject
-        
-        # Add HTML body
-        message.attach(MIMEText(body, "html"))
-        
-        # Create SSL context
-        context = ssl.create_default_context()
-        
-        # Create secure connection with server and send email (with timeout)
-        logger.info(f"Connecting to SMTP server {smtp_server}:{smtp_port}...")
-        with smtplib.SMTP(smtp_server, smtp_port, timeout=10) as server:
-            server.ehlo()
-            
-            # Start TLS encryption
-            if smtp_port == 587:
-                server.starttls(context=context)
-                server.ehlo()
-            
-            # Login to the SMTP server
-            logger.info("Authenticating with SMTP server...")
-            server.login(sender_email, password)
-            logger.info("Successfully authenticated with SMTP server")
-            
-            # Send the email
-            print("📧 Sending email...")
-            result = server.send_message(message)
-            print(f"📧 Email sent successfully to {recipient}")
-            print(f"📧 Server response: {result}")
-            logger.info(f"Email sent successfully to {recipient}")
-            
-            return True
-            
-    except OSError as e:
-        # Network unreachable or connection refused
-        if e.errno == 101:  # Network is unreachable
-            error_msg = f"Network unreachable - Cannot connect to {smtp_server}:{smtp_port}"
-            logger.error(error_msg)
-            logger.error("Possible fixes:")
-            logger.error("  1. Check if port 587 is open in server firewall")
-            logger.error("  2. Verify server has internet access")
-            logger.error("  3. Try alternative SMTP port (465 for SSL)")
-            logger.error("  4. Check if outbound SMTP connections are blocked")
-        elif e.errno == 111:  # Connection refused
-            error_msg = f"Connection refused by {smtp_server}:{smtp_port}"
-            logger.error(error_msg)
-        else:
-            error_msg = f"Network error ({e.errno}): {e}"
-            logger.error(error_msg)
-        raise
-    except smtplib.SMTPAuthenticationError as e:
-        error_msg = f"SMTP Authentication Error: {e}"
-        logger.error(error_msg)
-        print(f"❌ {error_msg}")
-        print("❌ Please check your email credentials and ensure 'Less secure app access' is enabled in your Google account.")
-        print("❌ Or use an App Password if 2FA is enabled.")
-        raise
-    except smtplib.SMTPException as e:
-        error_msg = f"SMTP Error: {e}"
-        logger.error(error_msg)
-        print(f"❌ {error_msg}")
-        raise
-    except Exception as e:
-        error_msg = f"Unexpected error: {str(e)}"
-        logger.error(error_msg)
-        print(f"❌ {error_msg}")
-        import traceback
-        print("❌ Full traceback:")
-        traceback.print_exc()
-        raise
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    
+    return loop.run_until_complete(send_email_async(recipient, subject, body, html_body))

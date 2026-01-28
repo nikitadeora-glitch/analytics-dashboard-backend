@@ -12,7 +12,7 @@ import uuid
 from models import User, PasswordReset
 from schemas import UserCreate, UserLogin, Token, PasswordResetRequest, PasswordResetConfirm, GoogleLoginSchema
 from database import get_db
-from sendgrid_email import send_email
+from sendgrid_email import send_notification_email
 import jwt
 from routers.google import verify_google_token
 
@@ -293,24 +293,24 @@ async def forgot_password(
     # Build reset link
     reset_link = f"{os.getenv('FRONTEND_URL')}/reset-password?token={token}"
 
-    subject = f"{os.getenv('APP_NAME')} - Reset Password"
-    html = f"""
-    <div style="font-family:Arial">
-      <h2>Password Reset</h2>
-      <p>Click below to reset password:</p>
-      <a href="{reset_link}" style="padding:10px 14px;background:#111;color:#fff;text-decoration:none;border-radius:6px;">
-        Reset Password
-      </a>
-      <p>This link expires in 15 minutes.</p>
-    </div>
-    """
-
     try:
-        send_email(
-            to_email=email,
-            subject=subject,
-            html=html,
-            text=f"Reset password: {reset_link}"
+        await send_notification_email(
+            recipient_email=email,
+            notification_title="Password Reset Request",
+            notification_message=f"""
+            Hello,
+            
+            You requested to reset your password for your Statify account. Click the link below to reset your password:
+            
+            {reset_link}
+            
+            This link will expire in 15 minutes for security reasons.
+            
+            If you didn't request this password reset, you can safely ignore this email.
+            
+            Best regards,
+            The Statify Team
+            """
         )
         print(f"✅ Password reset email sent successfully to {email}")
     except Exception as e:
@@ -322,14 +322,13 @@ async def forgot_password(
     return {"status": 1, "message": "If this email exists, reset link has been sent."}
 
 @router.get("/test-email")
-def test_email():
+async def test_email():
     """Test email endpoint for SendGrid debugging"""
     try:
-        send_email(
-            to_email="yourmail@gmail.com",
-            subject="SendGrid Test",
-            html="<b>Hello from FastAPI + SendGrid</b>",
-            text="Hello from FastAPI + SendGrid"
+        await send_notification_email(
+            recipient_email="yourmail@gmail.com",
+            notification_title="SendGrid Test",
+            notification_message="This is a test email from FastAPI + SendGrid integration."
         )
         return {"ok": True, "message": "Test email sent successfully"}
     except Exception as e:
