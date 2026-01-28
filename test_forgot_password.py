@@ -6,7 +6,8 @@ Test forgot password functionality
 import asyncio
 import requests
 import json
-
+import pytest
+@pytest.mark.anyio   # FastAPI ke liye best
 async def test_forgot_password():
     """Test the forgot password endpoint"""
     
