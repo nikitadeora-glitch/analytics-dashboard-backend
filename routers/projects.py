@@ -77,6 +77,23 @@ def get_projects(
     ).all()
 
 
+# -------------------------------
+# Get Deleted Projects
+# -------------------------------
+@router.get("/deleted", response_model=list[schemas.ProjectResponse])
+def get_deleted_projects(
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional)
+):
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
+    return db.query(models.Project).filter(
+        models.Project.user_id == current_user.id,
+        models.Project.is_active == False
+    ).all()
+
+
 # =====================================================
 # 🔥 IMPORTANT: STATIC ROUTE MUST COME FIRST
 # =====================================================
@@ -233,3 +250,24 @@ def delete_project(
     project.is_active = False
     db.commit()
     return {"message": "Project deleted"}
+
+
+# -------------------------------
+# Restore Project
+# -------------------------------
+@router.post("/{project_id}/restore")
+def restore_project(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional)
+):
+    project = db.query(models.Project).filter(models.Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if current_user and project.user_id and project.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    project.is_active = True
+    db.commit()
+    return {"message": "Project restored"}
