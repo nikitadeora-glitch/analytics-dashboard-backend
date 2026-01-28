@@ -7,7 +7,7 @@ import asyncio
 import requests
 import json
 import pytest
-@pytest.mark.anyio   # FastAPI ke liye best
+@pytest.mark.asyncio   # Only use asyncio for FastAPI
 async def test_forgot_password():
     """Test the forgot password endpoint"""
     
