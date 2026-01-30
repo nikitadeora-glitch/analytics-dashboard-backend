@@ -134,10 +134,6 @@ async def send_notification_email(recipient_email: str, notification_title: str,
                 <p>Hi there,</p>
                 <p>{notification_message}</p>
                 
-                <div style="text-align: center;">
-                    <a href="{frontend_url}" class="button">View Dashboard</a>
-                </div>
-                
                 <p>Best regards,<br>The {app_name} Team</p>
             </div>
             <div class="footer">
@@ -155,8 +151,6 @@ async def send_notification_email(recipient_email: str, notification_title: str,
     Hi there,
     
     {notification_message}
-    
-    View your dashboard: {frontend_url}
     
     Best regards,
     The {app_name} Team
