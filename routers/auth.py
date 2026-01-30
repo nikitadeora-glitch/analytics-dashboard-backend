@@ -263,10 +263,13 @@ async def forgot_password(
     # Find user by email
     user = db.query(User).filter(User.email == email).first()
     
-    # 🔐 SECURITY: same response always
+    # ❌ Return error for unregistered emails
     if not user:
         print(f"No user found with email: {email}")
-        return {"status": 1, "message": "If this email exists, reset link has been sent."}
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
 
     # Generate reset token
     token = str(uuid.uuid4())
@@ -320,7 +323,7 @@ async def forgot_password(
         import traceback
         traceback.print_exc()
 
-    return {"status": 1, "message": "If this email exists, reset link has been sent."}
+    return {"status": 1, "message": "Reset email sent"}
 
 @router.get("/test-email")
 async def test_email():
