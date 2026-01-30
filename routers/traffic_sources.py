@@ -129,7 +129,11 @@ def get_traffic_sources(
                 # Calculate bounce rate
                 bounced = sum(
                     1 for v in data["visits"]
-                    if not v.exit_page or v.entry_page == v.exit_page
+                    if (
+                        not v.exit_page or 
+                        v.entry_page == v.exit_page or
+                        (v.session_duration and v.session_duration <= 30)
+                    )
                 )
                 bounce_rate = round((bounced / data["count"]) * 100, 1) if data["count"] > 0 else 0
 
@@ -246,8 +250,13 @@ def get_traffic_source_detail(
             if visit_date in daily_data:
                 daily_data[visit_date]['sessions'] += 1
                 
-                # Check if bounced (no exit page or same as entry page)
-                if not visit.exit_page or visit.entry_page == visit.exit_page:
+                # Check if bounced (no exit page or same as entry page OR session duration <= 30 seconds)
+                is_bounced = (
+                    not visit.exit_page or 
+                    visit.entry_page == visit.exit_page or
+                    (visit.session_duration and visit.session_duration <= 30)
+                )
+                if is_bounced:
                     daily_data[visit_date]['bounced_sessions'] += 1
 
         # Calculate bounce rates
@@ -264,6 +273,8 @@ def get_traffic_source_detail(
         return {
             "source_type": source_type,
             "total_sessions": len(matching_visits),
+            "start_date": start_date,
+            "end_date": end_date,
             "daily_data": result
         }
 
