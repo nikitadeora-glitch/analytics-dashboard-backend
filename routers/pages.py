@@ -123,35 +123,43 @@ def get_most_visited_pages(
         result = []
         for base_url, total_views, unique_sessions, avg_time_spent, title in page_stats:
             # Calculate bounce rate for this page
-            # Bounce rate = (sessions with only 1 page view / total sessions) * 100
+            # Bounce rate = (sessions with only 1 page view / total sessions that viewed this page) * 100
             
-            # Get all sessions that visited this page
-            sessions_query = db.query(models.Visit.id).join(models.PageView).filter(
+            # Get all visits that included this page
+            page_views_query = db.query(models.PageView.visit_id).join(models.Visit).filter(
                 models.Visit.project_id == project_id,
                 func.split_part(models.PageView.url, '?', 1) == base_url
             )
             
             if start_dt:
-                sessions_query = sessions_query.filter(models.Visit.visited_at >= start_dt)
+                page_views_query = page_views_query.filter(models.Visit.visited_at >= start_dt)
             if end_dt:
-                sessions_query = sessions_query.filter(models.Visit.visited_at <= end_dt)
+                page_views_query = page_views_query.filter(models.Visit.visited_at <= end_dt)
             
-            # Get unique session IDs that visited this page
-            session_ids = [row[0] for row in sessions_query.distinct().all()]
+            # Get unique visit IDs that viewed this page
+            visit_ids = [row[0] for row in page_views_query.distinct().all()]
             
-            if session_ids:
-                # Count how many page views each session had
-                session_page_counts = db.query(
+            if visit_ids:
+                # Count page views per visit for this specific page
+                visit_page_counts = db.query(
                     models.PageView.visit_id,
                     func.count(models.PageView.id).label('page_count')
                 ).filter(
-                    models.PageView.visit_id.in_(session_ids)
+                    models.PageView.visit_id.in_(visit_ids)
                 ).group_by(models.PageView.visit_id).all()
                 
-                # Calculate bounce rate
-                single_page_sessions = sum(1 for _, count in session_page_counts if count == 1)
-                total_sessions = len(session_page_counts)
-                bounce_rate = (single_page_sessions / total_sessions * 100) if total_sessions > 0 else 0.0
+                # Purely dynamic calculation based on actual page view data
+                visits_with_page_data = {visit_id: count for visit_id, count in visit_page_counts}
+                
+                # Only count visits that have actual page view data
+                single_page_visits = sum(1 for visit_id, count in visits_with_page_data.items() if count == 1)
+                total_visits_with_data = len(visits_with_page_data)
+                
+                # Calculate bounce rate only from visits with page view data
+                bounce_rate = (single_page_visits / total_visits_with_data * 100) if total_visits_with_data > 0 else 0.0
+                
+                print(f"📊 Most Visited Bounce Rate for {base_url}: {single_page_visits}/{total_visits_with_data} = {bounce_rate:.1f}%")
+                print(f"🔍 Visits with page data: {total_visits_with_data}, Total visits: {len(visit_ids)}")
             else:
                 bounce_rate = 0.0
             
@@ -279,18 +287,26 @@ def get_entry_pages(
             visit_ids = [row[0] for row in entry_visits_query.all()]
             
             if visit_ids:
-                # Count page views per session
-                session_page_counts = db.query(
+                # Count page views per visit for entry pages
+                visit_page_counts = db.query(
                     models.PageView.visit_id,
                     func.count(models.PageView.id).label('page_count')
                 ).filter(
                     models.PageView.visit_id.in_(visit_ids)
                 ).group_by(models.PageView.visit_id).all()
                 
-                # Calculate bounce rate
-                single_page_sessions = sum(1 for _, count in session_page_counts if count == 1)
-                total_sessions = len(session_page_counts)
-                bounce_rate = (single_page_sessions / total_sessions * 100) if total_sessions > 0 else 0.0
+                # Purely dynamic calculation based on actual page view data
+                visits_with_page_data = {visit_id: count for visit_id, count in visit_page_counts}
+                
+                # Only count visits that have actual page view data
+                single_page_visits = sum(1 for visit_id, count in visits_with_page_data.items() if count == 1)
+                total_visits_with_data = len(visits_with_page_data)
+                
+                # Calculate bounce rate only from visits with page view data
+                bounce_rate = (single_page_visits / total_visits_with_data * 100) if total_visits_with_data > 0 else 0.0
+                
+                print(f"📊 Entry Page Bounce Rate for {base_url}: {single_page_visits}/{total_visits_with_data} = {bounce_rate:.1f}%")
+                print(f"🔍 Visits with page data: {total_visits_with_data}, Total visits: {len(visit_ids)}")
             else:
                 bounce_rate = 0.0
             
@@ -359,33 +375,67 @@ def get_exit_pages(
     end_date: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    """Optimized exit pages with chunked loading"""
+    """Optimized exit pages with chunked loading - calculated from last page view in each session"""
     try:
         print(f"🔍 Getting exit pages for project {project_id}")
         print(f"📅 Date range: {start_date} to {end_date}")
 
         start_dt, end_dt = normalize_date_range(start_date, end_date)
 
-        base_url_exp = func.split_part(models.Visit.exit_page, '?', 1)
+        # First check if there are any page views at all
+        total_page_views = db.query(models.PageView).join(models.Visit).filter(
+            models.Visit.project_id == project_id
+        ).count()
+        print(f"📊 Total page views for project {project_id}: {total_page_views}")
 
-        # Single optimized query with pagination
-        query = db.query(
-            base_url_exp.label("exit_page"),
-            func.count(models.Visit.id).label("exits"),
-            func.count(func.distinct(models.Visit.visitor_id)).label("unique_visitors")
-        ).filter(
-            models.Visit.project_id == project_id,
-            models.Visit.exit_page.isnot(None)
+        if total_page_views == 0:
+            print("❌ No page views found for this project")
+            return {"data": [], "has_more": False, "total_loaded": 0}
+
+        # Get the last page view for each session (this is the exit page)
+        last_page_views_subquery = db.query(
+            models.PageView.visit_id,
+            func.max(models.PageView.viewed_at).label('last_viewed_at')
+        ).join(models.Visit).filter(
+            models.Visit.project_id == project_id
         )
 
         if start_dt:
-            query = query.filter(models.Visit.visited_at >= start_dt)
+            last_page_views_subquery = last_page_views_subquery.filter(models.Visit.visited_at >= start_dt)
         if end_dt:
-            query = query.filter(models.Visit.visited_at <= end_dt)
+            last_page_views_subquery = last_page_views_subquery.filter(models.Visit.visited_at <= end_dt)
+
+        # Check how many unique visits we have
+        unique_visits = db.query(models.PageView.visit_id).join(models.Visit).filter(
+            models.Visit.project_id == project_id
+        ).distinct().count()
+        print(f"📊 Unique visits (sessions): {unique_visits}")
+
+        last_page_views_subquery = last_page_views_subquery.group_by(models.PageView.visit_id).subquery()
+
+        # Get the actual exit pages from the last page views
+        exit_pages_query = db.query(
+            func.split_part(models.PageView.url, '?', 1).label("exit_page"),
+            func.count(models.PageView.visit_id).label("exits"),
+            func.count(func.distinct(models.Visit.visitor_id)).label("unique_visitors")
+        ).join(models.Visit).join(
+            last_page_views_subquery,
+            and_(
+                models.PageView.visit_id == last_page_views_subquery.c.visit_id,
+                models.PageView.viewed_at == last_page_views_subquery.c.last_viewed_at
+            )
+        ).filter(
+            models.Visit.project_id == project_id
+        )
+
+        if start_dt:
+            exit_pages_query = exit_pages_query.filter(models.Visit.visited_at >= start_dt)
+        if end_dt:
+            exit_pages_query = exit_pages_query.filter(models.Visit.visited_at <= end_dt)
 
         # Apply pagination
         exit_pages = (
-            query.group_by(base_url_exp)
+            exit_pages_query.group_by(func.split_part(models.PageView.url, '?', 1))
             .order_by(desc("exits"))
             .offset(offset)
             .limit(limit)
@@ -397,18 +447,7 @@ def get_exit_pages(
             # Calculate exit rate for exit pages
             # Exit rate = (sessions that exited from this page / sessions that viewed this page) * 100
             
-            # Get all visits that exited from this page
-            exit_visits_query = db.query(models.Visit.id).filter(
-                models.Visit.project_id == project_id,
-                func.split_part(models.Visit.exit_page, '?', 1) == base_url
-            )
-            
-            if start_dt:
-                exit_visits_query = exit_visits_query.filter(models.Visit.visited_at >= start_dt)
-            if end_dt:
-                exit_visits_query = exit_visits_query.filter(models.Visit.visited_at <= end_dt)
-            
-            # Get all visits that viewed this page (not just exited from it)
+            # Get all visits that viewed this page (for denominator)
             page_visits_query = db.query(models.Visit.id).join(models.PageView).filter(
                 models.Visit.project_id == project_id,
                 func.split_part(models.PageView.url, '?', 1) == base_url
@@ -419,12 +458,10 @@ def get_exit_pages(
             if end_dt:
                 page_visits_query = page_visits_query.filter(models.Visit.visited_at <= end_dt)
             
-            # Count exits vs total page views
-            exit_count = exit_visits_query.count()
             total_page_visits = page_visits_query.distinct().count()
             
             # Calculate exit rate
-            exit_rate = (exit_count / total_page_visits * 100) if total_page_visits > 0 else 0.0
+            exit_rate = (exits / total_page_visits * 100) if total_page_visits > 0 else 0.0
             
             # Calculate bounce rate for exit pages
             # Bounce rate = (sessions with only 1 page view / total sessions that viewed this page) * 100
@@ -433,26 +470,53 @@ def get_exit_pages(
             page_visit_ids = [row[0] for row in page_visits_query.distinct().all()]
             
             if page_visit_ids:
-                # Count page views per session for this page
-                session_page_counts = db.query(
+                # Count page views per visit for this page
+                visit_page_counts = db.query(
                     models.PageView.visit_id,
                     func.count(models.PageView.id).label('page_count')
                 ).filter(
                     models.PageView.visit_id.in_(page_visit_ids)
                 ).group_by(models.PageView.visit_id).all()
                 
-                # Calculate bounce rate
-                single_page_sessions = sum(1 for _, count in session_page_counts if count == 1)
-                total_sessions = len(session_page_counts)
-                bounce_rate = (single_page_sessions / total_sessions * 100) if total_sessions > 0 else 0.0
+                # Purely dynamic calculation based on actual page view data
+                visits_with_page_data = {visit_id: count for visit_id, count in visit_page_counts}
+                
+                # Only count visits that have actual page view data
+                single_page_visits = sum(1 for visit_id, count in visits_with_page_data.items() if count == 1)
+                total_visits_with_data = len(visits_with_page_data)
+                
+                # Calculate bounce rate only from visits with page view data
+                bounce_rate = (single_page_visits / total_visits_with_data * 100) if total_visits_with_data > 0 else 0.0
+                
+                print(f"📊 Exit Page Bounce Rate for {base_url}: {single_page_visits}/{total_visits_with_data} = {bounce_rate:.1f}%")
+                print(f"🔍 Visits with page data: {total_visits_with_data}, Total visits: {len(page_visit_ids)}")
             else:
                 bounce_rate = 0.0
             
-            # Get actual visits for this exit page - chunked approach
+            # Get actual visits for this exit page - get visits where this was the last page
             visits_for_page = []
-            exit_visits = db.query(models.Visit).filter(
+            
+            # Get visits that exited from this page (where this was the last page viewed)
+            exit_visits_subquery = db.query(
+                models.PageView.visit_id,
+                func.max(models.PageView.viewed_at).label('last_viewed_at')
+            ).join(models.Visit).filter(
                 models.Visit.project_id == project_id,
-                func.split_part(models.Visit.exit_page, '?', 1) == base_url
+                func.split_part(models.PageView.url, '?', 1) == base_url
+            ).group_by(models.PageView.visit_id).subquery()
+            
+            exit_visits = db.query(models.Visit).join(
+                models.PageView,
+                models.Visit.id == models.PageView.visit_id
+            ).join(
+                exit_visits_subquery,
+                and_(
+                    models.PageView.visit_id == exit_visits_subquery.c.visit_id,
+                    models.PageView.viewed_at == exit_visits_subquery.c.last_viewed_at
+                )
+            ).filter(
+                models.Visit.project_id == project_id,
+                func.split_part(models.PageView.url, '?', 1) == base_url
             )
             
             if start_dt:
