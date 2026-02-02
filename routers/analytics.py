@@ -1283,6 +1283,25 @@ def track_cart_action(project_id: int, visit_id: int, cart_action: schemas.CartA
         "virtual_page_url": virtual_page_url
     }
 
+def get_client_ip(request: Request) -> str:
+    """Extract real client IP from request, checking proxy headers first"""
+    # Check proxy headers in order of preference
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        # X-Forwarded-For can contain multiple IPs, take the first one (original client)
+        return forwarded_for.split(",")[0].strip()
+    
+    real_ip = request.headers.get("X-Real-IP")
+    if real_ip:
+        return real_ip.strip()
+    
+    cf_connecting_ip = request.headers.get("CF-Connecting-IP")
+    if cf_connecting_ip:
+        return cf_connecting_ip.strip()
+    
+    # Fallback to direct connection IP
+    return request.client.host
+
 @router.post("/{project_id}/track")
 def track_visit(project_id: int, visit: schemas.VisitCreate, request: Request, db: Session = Depends(get_db)):
     import requests
@@ -1302,8 +1321,8 @@ def track_visit(project_id: int, visit: schemas.VisitCreate, request: Request, d
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    # Get IP address
-    ip_address = visit.ip_address or request.client.host
+    # Get IP address - prioritize frontend provided IP, then extract from headers
+    ip_address = visit.ip_address or get_client_ip(request)
     
     # Skip location lookup for localhost/private IPs
     is_local = ip_address in ['127.0.0.1', 'localhost', '::1'] or ip_address.startswith('192.168.') or ip_address.startswith('10.')
