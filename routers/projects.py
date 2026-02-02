@@ -116,20 +116,22 @@ def get_all_projects_stats(
     project_ids = [p.id for p in projects]
 
     # -------------------------------
-    # Date ranges (IST based)
+    # Date ranges (Simple UTC - 00:00:00 to 23:59:59)
     # -------------------------------
-    ist = pytz.timezone("Asia/Kolkata")
-    now_utc = datetime.utcnow().replace(tzinfo=pytz.UTC)
-    now_ist = now_utc.astimezone(ist)
-
-    today_start_ist = now_ist.replace(hour=0, minute=0, second=0, microsecond=0)
-    today_start_utc = today_start_ist.astimezone(pytz.UTC).replace(tzinfo=None)
-
-    yesterday_start_ist = today_start_ist - timedelta(days=1)
-    yesterday_start_utc = yesterday_start_ist.astimezone(pytz.UTC).replace(tzinfo=None)
-
-    month_start_ist = today_start_ist.replace(day=1)
-    month_start_utc = month_start_ist.astimezone(pytz.UTC).replace(tzinfo=None)
+    from datetime import datetime, timezone
+    
+    now_utc = datetime.now(timezone.utc)
+    
+    # Today: 00:00:00 to 23:59:59 UTC
+    today_start_utc = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_end_utc = now_utc.replace(hour=23, minute=59, second=59, microsecond=999999)
+    
+    # Yesterday: 00:00:00 to 23:59:59 UTC  
+    yesterday_start_utc = today_start_utc - timedelta(days=1)
+    yesterday_end_utc = today_end_utc - timedelta(days=1)
+    
+    # Month start: 00:00:00 UTC on 1st day
+    month_start_utc = today_start_utc.replace(day=1)
 
     # -------------------------------
     # PAGE VIEW BASED STATS - FIXED TO MATCH ANALYTICS
@@ -144,33 +146,41 @@ def get_all_projects_stats(
             .filter(models.Visit.project_id.in_(project_ids))
         )
         if start:
-            # 🔥 FIX: Use Visit.visited_at to match analytics summary endpoint
             q = q.filter(models.Visit.visited_at >= start)
         if end:
-            # 🔥 FIX: Use Visit.visited_at to match analytics summary endpoint
-            q = q.filter(models.Visit.visited_at < end)
+            q = q.filter(models.Visit.visited_at <= end)
 
         return {r.project_id: r.count for r in q.group_by(models.Visit.project_id).all()}
 
-    today_dict = page_view_stats(start=today_start_utc)
-    yesterday_dict = page_view_stats(start=yesterday_start_utc, end=today_start_utc)
+    today_dict = page_view_stats(start=today_start_utc, end=today_end_utc)
+    yesterday_dict = page_view_stats(start=yesterday_start_utc, end=yesterday_end_utc)
     month_dict = page_view_stats(start=month_start_utc)
     total_dict = page_view_stats()
 
     # -------------------------------
-    # VISITOR BASED STATS
+    # VISITOR BASED STATS - With proper date ranges
     # -------------------------------
-    unique_visitors = dict(
-        db.query(
-            models.Visit.project_id,
-            func.count(func.distinct(models.Visit.visitor_id))
+    def visitor_stats(start=None, end=None):
+        q = (
+            db.query(
+                models.Visit.project_id,
+                func.count(func.distinct(models.Visit.visitor_id))
+            )
+            .filter(models.Visit.project_id.in_(project_ids))
         )
-        .filter(models.Visit.project_id.in_(project_ids))
-        .group_by(models.Visit.project_id)
-        .all()
-    )
+        if start:
+            q = q.filter(models.Visit.visited_at >= start)
+        if end:
+            q = q.filter(models.Visit.visited_at <= end)
+        return {r.project_id: r.count for r in q.group_by(models.Visit.project_id).all()}
 
-    five_min_ago = datetime.utcnow() - timedelta(minutes=5)
+    total_visitors = visitor_stats()
+    today_visitors = visitor_stats(start=today_start_utc, end=today_end_utc)
+    yesterday_visitors = visitor_stats(start=yesterday_start_utc, end=yesterday_end_utc)
+    month_visitors = visitor_stats(start=month_start_utc)
+
+    # Live visitors (last 5 minutes)
+    five_min_ago = now_utc - timedelta(minutes=5)
     live_visitors = dict(
         db.query(
             models.Visit.project_id,
@@ -205,7 +215,10 @@ def get_all_projects_stats(
             "page_views": total_dict.get(project.id, 0),
 
             # VISITORS
-            "unique_visitors": unique_visitors.get(project.id, 0),
+            "unique_visitors": total_visitors.get(project.id, 0),
+            "today_visitors": today_visitors.get(project.id, 0),
+            "yesterday_visitors": yesterday_visitors.get(project.id, 0),
+            "month_visitors": month_visitors.get(project.id, 0),
             "live_visitors": live_visitors.get(project.id, 0),
         })
 
