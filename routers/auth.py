@@ -23,8 +23,8 @@ security = HTTPBearer()
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-here")
 ALGORITHM = "HS256"
 # Token expiration times (in minutes for access token, days for refresh token)
-ACCESS_TOKEN_EXPIRE_MINUTES = 30  # 30 minutes
-REFRESH_TOKEN_EXPIRE_DAYS = 7     # 7 days
+ACCESS_TOKEN_EXPIRE_MINUTES = 1440  # 24 hours (24 * 60 = 1440 minutes)
+REFRESH_TOKEN_EXPIRE_DAYS = 30     # 30 days
 
 
 def hash_password(password: str) -> str:

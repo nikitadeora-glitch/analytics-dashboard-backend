@@ -282,48 +282,31 @@ def get_visitor_activity_view(
 
             try:
 
-                # Parse dates - handle both YYYY-MM-DD and ISO formats
-
-                if 'T' in start_date:
-
-                    # ISO format with time
-
-                    start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
-
-                else:
-
-                    # YYYY-MM-DD format - set to start of day in IST
-
-                    ist = timezone('Asia/Kolkata')
-
-                    start_dt = ist.localize(datetime.strptime(start_date, '%Y-%m-%d').replace(hour=0, minute=0, second=0))
-
-                    start_dt = start_dt.astimezone(timezone('UTC'))
-
+                # Parse dates - handle ISO format from frontend (UTC)
                 
+                print(f"🔍 Raw dates from frontend: start_date={start_date}, end_date={end_date}")
 
-                if 'T' in end_date:
-
-                    # ISO format with time
-
-                    end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-
-                else:
-
-                    # YYYY-MM-DD format - set to end of day in IST
-
-                    ist = timezone('Asia/Kolkata')
-
-                    end_dt = ist.localize(datetime.strptime(end_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59))
-
+                # Frontend sends ISO format with Z (UTC)
+                
+                start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                
+                end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                
+                # Convert to UTC for database comparison
+                
+                if start_dt.tzinfo is not None:
+                    
+                    start_dt = start_dt.astimezone(timezone('UTC'))
+                    
+                if end_dt.tzinfo is not None:
+                    
                     end_dt = end_dt.astimezone(timezone('UTC'))
 
-                
-
                 print(f"🔍 Backend date filtering: {start_dt} to {end_dt}")
+                
+                print(f"🔍 Date range in UTC: {start_dt.isoformat()} to {end_dt.isoformat()}")
 
                 
-
                 query = query.filter(
 
                     models.Visit.visited_at >= start_dt,
@@ -332,12 +315,18 @@ def get_visitor_activity_view(
 
                 )
 
+                # Check how many records match the filter
+                
+                count = query.count()
+                
+                print(f"📊 Records after date filtering: {count}")
+
             except ValueError as e:
 
                 print(f"❌ Date parsing error: {e}")
 
                 # Continue without date filtering if parsing fails
-
+                
                 pass
 
         
