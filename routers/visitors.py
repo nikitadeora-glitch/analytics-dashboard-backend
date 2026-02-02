@@ -375,7 +375,7 @@ def get_visitor_activity_view(
 
         
 
-        # Get session counts for all visitors in one query
+        # Get session counts for all visitors in one query with same date filtering
 
         visitor_ids = list(set([v.visitor_id for v in visits]))
 
@@ -395,15 +395,33 @@ def get_visitor_activity_view(
 
                 models.Visit.visitor_id.in_(visitor_ids)
 
-            ).group_by(models.Visit.visitor_id).all()
+            )
 
-            
+            # Apply the same date filtering to session counts
+            if start_date and end_date:
+                try:
+                    # Parse dates - handle ISO format from frontend (UTC)
+                    start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+                    end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                    
+                    # Convert to UTC for database comparison
+                    if start_dt.tzinfo is not None:
+                        start_dt = start_dt.astimezone(timezone('UTC'))
+                    if end_dt.tzinfo is not None:
+                        end_dt = end_dt.astimezone(timezone('UTC'))
+                    
+                    session_counts_query = session_counts_query.filter(
+                        models.Visit.visited_at >= start_dt,
+                        models.Visit.visited_at <= end_dt
+                    )
+                except ValueError as e:
+                    print(f"❌ Date parsing error in session counts: {e}")
+                    # Continue without date filtering if parsing fails
+                    pass
 
+            session_counts_query = session_counts_query.group_by(models.Visit.visitor_id).all()
             for visitor_id, count in session_counts_query:
-
                 session_counts[visitor_id] = count
-
-        
 
         result = []
 
