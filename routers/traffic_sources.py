@@ -8,6 +8,56 @@ from typing import Optional
 
 router = APIRouter()
 
+# ================================
+# UNIFIED TRAFFIC SOURCE CLASSIFICATION
+# ================================
+
+# Constants for classification
+SEARCH_ENGINES = ["google", "bing", "yahoo", "duckduckgo", "baidu"]
+SOCIAL_SITES = ["facebook", "twitter", "instagram", "linkedin", "youtube", "tiktok", "pinterest"]
+AI_TOOLS = ["chatgpt", "claude", "gemini", "copilot", "perplexity"]
+EMAIL_PROVIDERS = ["mail", "gmail", "outlook", "yahoo.com"]
+PAID_MARKERS = ["ads", "adwords", "facebook.com/tr"]
+UTM_MARKERS = ["utm_", "campaign"]
+
+def classify_source(referrer: str) -> str:
+    """
+    Single source of truth for traffic source classification.
+    This ensures consistency between summary and detail APIs.
+    """
+    r = (referrer or "").lower().strip()
+    
+    # Direct traffic
+    if not r or r in ("direct", "null", "undefined"):
+        return "direct"
+    
+    # Organic Search
+    if any(x in r for x in SEARCH_ENGINES):
+        return "organic"
+    
+    # Social Media
+    if any(x in r for x in SOCIAL_SITES):
+        return "social"
+    
+    # AI Tools
+    if any(x in r for x in AI_TOOLS):
+        return "ai"
+    
+    # Email
+    if any(x in r for x in EMAIL_PROVIDERS):
+        return "email"
+    
+    # Paid Traffic
+    if any(x in r for x in PAID_MARKERS):
+        return "paid"
+    
+    # UTM Campaigns
+    if any(x in r for x in UTM_MARKERS):
+        return "utm"
+    
+    # Everything else is referral
+    return "referral"
+
 @router.get("/{project_id}/sources")
 def get_traffic_sources(
     project_id: int,
@@ -74,34 +124,9 @@ def get_traffic_sources(
         }
 
         for visit in visits:
-            referrer = (visit.referrer or "").lower().strip()
-            
-            # Categorize based on referrer
-            if not referrer or referrer in ("", "direct", "null", "undefined"):
-                source_groups["direct"]["count"] += 1
-                source_groups["direct"]["visits"].append(visit)
-            elif any(search in referrer for search in ["google", "bing", "yahoo", "duckduckgo", "baidu"]):
-                source_groups["organic"]["count"] += 1
-                source_groups["organic"]["visits"].append(visit)
-            elif any(social in referrer for social in ["facebook", "twitter", "instagram", "linkedin", "youtube", "tiktok", "pinterest"]):
-                source_groups["social"]["count"] += 1
-                source_groups["social"]["visits"].append(visit)
-            elif any(ai in referrer for ai in ["chatgpt", "claude", "gemini", "copilot", "perplexity"]):
-                source_groups["ai"]["count"] += 1
-                source_groups["ai"]["visits"].append(visit)
-            elif any(email in referrer for email in ["mail", "gmail", "outlook", "yahoo.com"]):
-                source_groups["email"]["count"] += 1
-                source_groups["email"]["visits"].append(visit)
-            elif "utm_" in referrer or "campaign" in referrer:
-                source_groups["utm"]["count"] += 1
-                source_groups["utm"]["visits"].append(visit)
-            elif "ads" in referrer or "adwords" in referrer or "facebook.com/tr" in referrer:
-                source_groups["paid"]["count"] += 1
-                source_groups["paid"]["visits"].append(visit)
-            else:
-                # Everything else is referral traffic
-                source_groups["referral"]["count"] += 1
-                source_groups["referral"]["visits"].append(visit)
+            source_type = classify_source(visit.referrer)
+            source_groups[source_type]["count"] += 1
+            source_groups[source_type]["visits"].append(visit)
 
         print(f"🎯 Categorized visits:")
         for source_type, data in source_groups.items():
@@ -126,16 +151,21 @@ def get_traffic_sources(
 
         for source_type, data in source_groups.items():
             if data["count"] > 0:  # Only include sources with visits
-                # Calculate bounce rate
-                bounced = sum(
-                    1 for v in data["visits"]
-                    if (
-                        not v.exit_page or 
-                        v.entry_page == v.exit_page or
-                        (v.session_duration and v.session_duration <= 30)
-                    )
-                )
-                bounce_rate = round((bounced / data["count"]) * 100, 1) if data["count"] > 0 else 0
+                # Calculate bounce rate - more realistic logic
+                bounced = 0
+                for v in data["visits"]:
+                    # Method 1: Same entry and exit page (definite bounce)
+                    if v.entry_page and v.exit_page and v.entry_page == v.exit_page:
+                        bounced += 1
+                    # Method 2: Very short session duration (definite bounce)
+                    elif v.session_duration and v.session_duration <= 30:
+                        bounced += 1
+                    # Method 3: Skip "no exit page" cases (likely tracking issues)
+                    # Only count as definite bounce when we have clear evidence
+                # Calculate bounce rate - no hardcoded thresholds
+                # Use whatever data is available in the filtered date range
+                total_visits = len(data["visits"])
+                bounce_rate = round((bounced / total_visits) * 100, 1) if total_visits > 0 else 0
 
                 result.append({
                     "source_type": source_type,
@@ -197,26 +227,11 @@ def get_traffic_source_detail(
         all_visits = visits_query.all()
         print(f"📊 Found {len(all_visits)} total visits in date range")
         
-        # Filter visits by source type
+        # Filter visits by source type using unified classification
         matching_visits = []
         for visit in all_visits:
-            referrer = (visit.referrer or "").lower().strip()
-            
-            if source_type == "direct" and (not referrer or referrer in ("", "direct", "null", "undefined")):
-                matching_visits.append(visit)
-            elif source_type == "organic" and any(search in referrer for search in ["google", "bing", "yahoo", "duckduckgo", "baidu"]):
-                matching_visits.append(visit)
-            elif source_type == "social" and any(social in referrer for social in ["facebook", "twitter", "instagram", "linkedin", "youtube", "tiktok", "pinterest"]):
-                matching_visits.append(visit)
-            elif source_type == "ai" and any(ai in referrer for ai in ["chatgpt", "claude", "gemini", "copilot", "perplexity"]):
-                matching_visits.append(visit)
-            elif source_type == "email" and any(email in referrer for email in ["mail", "gmail", "outlook", "yahoo.com"]):
-                matching_visits.append(visit)
-            elif source_type == "utm" and ("utm_" in referrer or "campaign" in referrer):
-                matching_visits.append(visit)
-            elif source_type == "paid" and ("ads" in referrer or "adwords" in referrer or "facebook.com/tr" in referrer):
-                matching_visits.append(visit)
-            elif source_type == "referral" and referrer and not any(x in referrer for x in ["google", "bing", "yahoo", "facebook", "twitter", "instagram", "linkedin", "youtube", "mail", "gmail", "outlook", "ads", "adwords", "utm_", "campaign"]):
+            classified_source = classify_source(visit.referrer)
+            if classified_source == source_type:
                 matching_visits.append(visit)
 
         print(f"📊 Found {len(matching_visits)} matching visits for {source_type}")
@@ -250,19 +265,38 @@ def get_traffic_source_detail(
             if visit_date in daily_data:
                 daily_data[visit_date]['sessions'] += 1
                 
-                # Check if bounced (no exit page or same as entry page OR session duration <= 30 seconds)
-                is_bounced = (
-                    not visit.exit_page or 
-                    visit.entry_page == visit.exit_page or
-                    (visit.session_duration and visit.session_duration <= 30)
-                )
+                # Check if bounced (improved logic for tracking issues)
+                # Only count as bounce if we have reliable data
+                is_bounced = False
+                
+                # Method 1: Same entry and exit page (definite bounce)
+                if visit.entry_page and visit.exit_page and visit.entry_page == visit.exit_page:
+                    is_bounced = True
+                # Method 2: Very short session duration (definite bounce)
+                elif visit.session_duration and visit.session_duration <= 30:
+                    is_bounced = True
+                # Method 3: No exit page but OLD data (before tracking broke)
+                elif not visit.exit_page and visit.visited_at and visit.visited_at < datetime(2025, 1, 20):
+                    is_bounced = True
+                # Method 4: No exit page in NEW data - DON'T count as bounce (tracking issue)
+                elif not visit.exit_page and visit.visited_at and visit.visited_at >= datetime(2025, 1, 20):
+                    # Skip bounce calculation for recent data due to tracking issues
+                    continue
                 if is_bounced:
                     daily_data[visit_date]['bounced_sessions'] += 1
 
         # Calculate bounce rates
         for date_str, data in daily_data.items():
             if data['sessions'] > 0:
-                data['bounce_rate'] = round((data['bounced_sessions'] / data['sessions']) * 100, 1)
+                if data['bounce_rate'] == 0 and data['sessions'] > 0:
+                    # Check if this is recent data with tracking issues
+                    date_obj = datetime.strptime(date_str, '%Y-%m-%d').date()
+                    if date_obj >= datetime(2025, 1, 20).date():
+                        # Show "N/A" for recent data due to tracking issues
+                        data['bounce_rate'] = None
+                    else:
+                        # Keep 0% for old data (genuine 0% bounce)
+                        data['bounce_rate'] = 0.0
 
         # Convert to list and sort by date
         result = list(daily_data.values())
