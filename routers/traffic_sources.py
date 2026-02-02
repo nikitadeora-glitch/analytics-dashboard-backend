@@ -5,6 +5,51 @@ from database import get_db
 import models
 from datetime import datetime, timedelta
 from typing import Optional
+from pytz import timezone
+
+# Local date normalization function to avoid circular dependency
+def normalize_date_range(start_date: str | None, end_date: str | None):
+    """
+    Normalize date range to IST calendar days, then convert to UTC for database queries.
+    This ensures consistency across all endpoints.
+    """
+    start_dt = end_dt = None
+    
+    print(f"🔍 Input dates - Start: {start_date}, End: {end_date}")
+
+    try:
+        if start_date:
+            if "T" in start_date:
+                # ISO format with time - parse as UTC
+                start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+            else:
+                # YYYY-MM-DD format - set to start of day in IST
+                ist = timezone("Asia/Kolkata")
+                start_dt = ist.localize(datetime.strptime(start_date, "%Y-%m-%d").replace(hour=0, minute=0, second=0))
+            
+            # Convert to UTC for database
+            if start_dt.tzinfo is not None:
+                start_dt = start_dt.astimezone(timezone("UTC"))
+
+        if end_date:
+            if "T" in end_date:
+                # ISO format with time - parse as UTC
+                end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+            else:
+                # YYYY-MM-DD format - set to end of day in IST
+                ist = timezone("Asia/Kolkata")
+                end_dt = ist.localize(datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59))
+            
+            # Convert to UTC for database
+            if end_dt.tzinfo is not None:
+                end_dt = end_dt.astimezone(timezone("UTC"))
+
+        print(f"🔍 Normalized dates - Start: {start_dt}, End: {end_dt}")
+        return start_dt, end_dt
+
+    except Exception as e:
+        print(f"❌ Date normalization error: {e}")
+        return None, None
 
 router = APIRouter()
 
@@ -70,24 +115,22 @@ def get_traffic_sources(
         print(f"📅 Date range: {start_date} to {end_date}")
         
         # -----------------------------
-        # Parse dates with error handling
+        # Parse dates using same normalization as reports
         # -----------------------------
         start_dt = None
         end_dt = None
 
-        if start_date:
+        if start_date and end_date:
             try:
-                start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
-                print(f"📅 Parsed start_date: {start_dt}")
-            except ValueError as e:
-                print(f"❌ Error parsing start_date: {e}")
+                print(f"🌐 Raw dates from frontend: start_date={start_date}, end_date={end_date}")
                 
-        if end_date:
-            try:
-                end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
-                print(f"📅 Parsed end_date: {end_dt}")
+                # Use the same date normalization as reports endpoint
+                start_dt, end_dt = normalize_date_range(start_date, end_date)
+                
+                print(f"🌐 Backend date filtering (IST normalized): {start_dt} to {end_dt}")
             except ValueError as e:
-                print(f"❌ Error parsing end_date: {e}")
+                print(f"❌ Date parsing error: {e}")
+                # Continue without date filtering if parsing fails
 
         # -----------------------------
         # Get visits and analyze referrers
@@ -97,10 +140,11 @@ def get_traffic_sources(
         )
 
         # Apply date filtering
-        if start_dt:
-            visits_query = visits_query.filter(models.Visit.visited_at >= start_dt)
-        if end_dt:
-            visits_query = visits_query.filter(models.Visit.visited_at <= end_dt)
+        if start_dt and end_dt:
+            visits_query = visits_query.filter(
+                models.Visit.visited_at >= start_dt,
+                models.Visit.visited_at <= end_dt
+            )
 
         visits = visits_query.all()
         print(f"📊 Found {len(visits)} visits in date range")
@@ -203,26 +247,32 @@ def get_traffic_source_detail(
         print(f"🔍 Getting traffic source detail for {source_type} in project {project_id}")
         print(f"📅 Date range: {start_date} to {end_date}")
         
-        # Parse dates
+        # Parse dates using same normalization as reports
         start_dt = None
         end_dt = None
 
-        if start_date:
-            start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
-            print(f"📅 Parsed start_date: {start_dt}")
-        if end_date:
-            end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
-            print(f"📅 Parsed end_date: {end_dt}")
+        if start_date and end_date:
+            try:
+                print(f"🌐 Raw dates from frontend: start_date={start_date}, end_date={end_date}")
+                
+                # Use the same date normalization as reports endpoint
+                start_dt, end_dt = normalize_date_range(start_date, end_date)
+                
+                print(f"🌐 Backend date filtering (IST normalized): {start_dt} to {end_dt}")
+            except ValueError as e:
+                print(f"❌ Date parsing error: {e}")
+                # Continue without date filtering if parsing fails
 
         # Get visits for this source type in date range
         visits_query = db.query(models.Visit).filter(
             models.Visit.project_id == project_id
         )
 
-        if start_dt:
-            visits_query = visits_query.filter(models.Visit.visited_at >= start_dt)
-        if end_dt:
-            visits_query = visits_query.filter(models.Visit.visited_at <= end_dt)
+        if start_dt and end_dt:
+            visits_query = visits_query.filter(
+                models.Visit.visited_at >= start_dt,
+                models.Visit.visited_at <= end_dt
+            )
 
         all_visits = visits_query.all()
         print(f"📊 Found {len(all_visits)} total visits in date range")

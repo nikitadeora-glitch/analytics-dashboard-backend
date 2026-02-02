@@ -19,6 +19,51 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pytz import timezone
 
 
+# Local date normalization function to avoid circular dependency
+def normalize_date_range(start_date: str | None, end_date: str | None):
+    """
+    Normalize date range to IST calendar days, then convert to UTC for database queries.
+    This ensures consistency across all endpoints.
+    """
+    start_dt = end_dt = None
+    
+    print(f"🔍 Input dates - Start: {start_date}, End: {end_date}")
+
+    try:
+        if start_date:
+            if "T" in start_date:
+                # ISO format with time - parse as UTC
+                start_dt = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
+            else:
+                # YYYY-MM-DD format - set to start of day in IST
+                ist = timezone("Asia/Kolkata")
+                start_dt = ist.localize(datetime.strptime(start_date, "%Y-%m-%d").replace(hour=0, minute=0, second=0))
+            
+            # Convert to UTC for database
+            if start_dt.tzinfo is not None:
+                start_dt = start_dt.astimezone(timezone("UTC"))
+
+        if end_date:
+            if "T" in end_date:
+                # ISO format with time - parse as UTC
+                end_dt = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+            else:
+                # YYYY-MM-DD format - set to end of day in IST
+                ist = timezone("Asia/Kolkata")
+                end_dt = ist.localize(datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59))
+            
+            # Convert to UTC for database
+            if end_dt.tzinfo is not None:
+                end_dt = end_dt.astimezone(timezone("UTC"))
+
+        print(f"🔍 Normalized dates - Start: {start_dt}, End: {end_dt}")
+        return start_dt, end_dt
+
+    except Exception as e:
+        print(f"❌ Date normalization error: {e}")
+        return None, None
+
+
 
 router = APIRouter()
 
@@ -276,37 +321,22 @@ def get_visitor_activity_view(
 
         
 
-        # Apply date filtering if provided
+        # Apply date filtering if provided - use same logic as reports endpoint
 
         if start_date and end_date:
 
             try:
 
-                # Parse dates - handle ISO format from frontend (UTC)
-                
                 print(f"🔍 Raw dates from frontend: start_date={start_date}, end_date={end_date}")
 
-                # Frontend sends ISO format with Z (UTC)
-                
-                start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
-                
-                end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-                
-                # Convert to UTC for database comparison
-                
-                if start_dt.tzinfo is not None:
-                    
-                    start_dt = start_dt.astimezone(timezone('UTC'))
-                    
-                if end_dt.tzinfo is not None:
-                    
-                    end_dt = end_dt.astimezone(timezone('UTC'))
+                # Use the same date normalization as reports endpoint
 
-                print(f"🔍 Backend date filtering: {start_dt} to {end_dt}")
-                
+                start_dt, end_dt = normalize_date_range(start_date, end_date)
+
+                print(f"🔍 Backend date filtering (IST normalized): {start_dt} to {end_dt}")
+
                 print(f"🔍 Date range in UTC: {start_dt.isoformat()} to {end_dt.isoformat()}")
 
-                
                 query = query.filter(
 
                     models.Visit.visited_at >= start_dt,
@@ -316,9 +346,9 @@ def get_visitor_activity_view(
                 )
 
                 # Check how many records match the filter
-                
+
                 count = query.count()
-                
+
                 print(f"📊 Records after date filtering: {count}")
 
             except ValueError as e:
@@ -326,7 +356,7 @@ def get_visitor_activity_view(
                 print(f"❌ Date parsing error: {e}")
 
                 # Continue without date filtering if parsing fails
-                
+
                 pass
 
         
@@ -400,15 +430,8 @@ def get_visitor_activity_view(
             # Apply the same date filtering to session counts
             if start_date and end_date:
                 try:
-                    # Parse dates - handle ISO format from frontend (UTC)
-                    start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
-                    end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-                    
-                    # Convert to UTC for database comparison
-                    if start_dt.tzinfo is not None:
-                        start_dt = start_dt.astimezone(timezone('UTC'))
-                    if end_dt.tzinfo is not None:
-                        end_dt = end_dt.astimezone(timezone('UTC'))
+                    # Use the same date normalization as reports endpoint
+                    start_dt, end_dt = normalize_date_range(start_date, end_date)
                     
                     session_counts_query = session_counts_query.filter(
                         models.Visit.visited_at >= start_dt,
@@ -895,53 +918,19 @@ def get_geographic_data(
 
         
 
-        # Apply date filtering if provided
+        # Apply date filtering if provided - use same logic as reports endpoint
 
         if start_date and end_date:
 
             try:
 
-                # Parse dates - handle both YYYY-MM-DD and ISO formats
+                print(f"🌍 Raw dates from frontend: start_date={start_date}, end_date={end_date}")
 
-                if 'T' in start_date:
+                # Use the same date normalization as reports endpoint
 
-                    # ISO format with time
+                start_dt, end_dt = normalize_date_range(start_date, end_date)
 
-                    start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
-
-                else:
-
-                    # YYYY-MM-DD format - set to start of day in IST
-
-                    ist = timezone('Asia/Kolkata')
-
-                    start_dt = ist.localize(datetime.strptime(start_date, '%Y-%m-%d').replace(hour=0, minute=0, second=0))
-
-                    start_dt = start_dt.astimezone(timezone('UTC'))
-
-                
-
-                if 'T' in end_date:
-
-                    # ISO format with time
-
-                    end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-
-                else:
-
-                    # YYYY-MM-DD format - set to end of day in IST
-
-                    ist = timezone('Asia/Kolkata')
-
-                    end_dt = ist.localize(datetime.strptime(end_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59))
-
-                    end_dt = end_dt.astimezone(timezone('UTC'))
-
-                
-
-                print(f"🌍 Backend date filtering: {start_dt} to {end_dt}")
-
-                
+                print(f"🌍 Backend date filtering (IST normalized): {start_dt} to {end_dt}")
 
                 query = query.filter(
 
