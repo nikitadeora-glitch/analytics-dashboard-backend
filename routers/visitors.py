@@ -622,7 +622,7 @@ def get_visitor_all_sessions(project_id: int, visitor_id: str, db: Session = Dep
 
             "session_id": visit.id,
 
-            "session_number": visit.session_id,
+            "session_number": f"#{visit.session_id}",
 
             "visited_at": visit.visited_at,
 
@@ -645,6 +645,8 @@ def get_visitor_all_sessions(project_id: int, visitor_id: str, db: Session = Dep
             "city": visit.city,
 
             "page_count": len(page_views),
+
+            "total_sessions": len(sessions) + 1,  # Current session count
 
             "page_journey": [{
 
@@ -1382,6 +1384,13 @@ def get_visitor_detail(project_id: int, visitor_id: str, db: Session = Depends(g
 
             session_page_views = page_views_map.get(session.id, [])
 
+            # Calculate exit_page from the last pageview if exit_page is empty
+            calculated_exit_page = session.exit_page or ""
+            if not calculated_exit_page and session_page_views:
+                # Get the last pageview URL as exit page
+                last_pageview = session_page_views[-1]
+                calculated_exit_page = last_pageview.get("url", "")
+
             sessions_data.append({
 
                 "session_id": str(session.id),
@@ -1394,7 +1403,7 @@ def get_visitor_detail(project_id: int, visitor_id: str, db: Session = Depends(g
 
                 "entry_page": session.entry_page or "",
 
-                "exit_page": session.exit_page or "",
+                "exit_page": calculated_exit_page,
 
                 "pageviews": session_page_views
 
@@ -1459,6 +1468,220 @@ def get_visitor_detail(project_id: int, visitor_id: str, db: Session = Depends(g
     except Exception as e:
 
         print(f"❌ Error in get_visitor_detail: {e}")
+
+        import traceback
+
+        traceback.print_exc()
+
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/{project_id}/visitor-detail-by-ip/{ip_address}")
+
+def get_visitor_detail_by_ip(project_id: int, ip_address: str, db: Session = Depends(get_db)):
+
+    """
+
+    Get visitor details by IP address.
+
+    Returns complete visitor profile with all sessions and navigation paths for the given IP address.
+
+    """
+
+    try:
+
+        print(f"🔍 Getting visitor detail for project {project_id}, IP {ip_address}")
+
+        
+
+        # Check if project exists
+
+        project = db.query(models.Project).filter(models.Project.id == project_id).first()
+
+        if not project:
+
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        
+
+        # Get visitor's most recent visit for this IP address
+
+        latest_visit = db.query(models.Visit).filter(
+
+            models.Visit.project_id == project_id,
+
+            models.Visit.ip_address == ip_address
+
+        ).order_by(desc(models.Visit.visited_at)).first()
+
+        
+
+        if not latest_visit:
+
+            raise HTTPException(status_code=404, detail="No visitor found with this IP address")
+
+        
+
+        # Use the visitor_id from the latest visit
+
+        visitor_id = latest_visit.visitor_id
+
+        
+
+        # Count total sessions for this visitor
+
+        total_sessions = db.query(models.Visit).filter(
+
+            models.Visit.project_id == project_id,
+
+            models.Visit.visitor_id == visitor_id
+
+        ).count()
+
+        
+
+        # Get all sessions for this visitor
+
+        sessions = db.query(models.Visit).filter(
+
+            models.Visit.project_id == project_id,
+
+            models.Visit.visitor_id == visitor_id
+
+        ).order_by(desc(models.Visit.visited_at)).all()
+
+        
+
+        # Get all page views for all sessions
+
+        visit_ids = [s.id for s in sessions]
+
+        page_views_map = {}
+
+        if visit_ids:
+
+            page_views = db.query(models.PageView).filter(
+
+                models.PageView.visit_id.in_(visit_ids)
+
+            ).order_by(models.PageView.viewed_at).all()
+
+            
+
+            for pv in page_views:
+
+                if pv.visit_id not in page_views_map:
+
+                    page_views_map[pv.visit_id] = []
+
+                page_views_map[pv.visit_id].append({
+
+                    "url": pv.url,
+
+                    "title": pv.title,
+
+                    "timestamp": pv.viewed_at.strftime("%H:%M:%S") if pv.viewed_at else "",
+
+                    "time_spent": pv.time_spent or 0
+
+                })
+
+        
+
+        # Build sessions data with page views
+
+        sessions_data = []
+
+        for session in sessions:
+
+            session_page_views = page_views_map.get(session.id, [])
+
+            # Calculate exit_page from the last pageview if exit_page is empty
+            calculated_exit_page = session.exit_page or ""
+            if not calculated_exit_page and session_page_views:
+                # Get the last pageview URL as exit page
+                last_pageview = session_page_views[-1]
+                calculated_exit_page = last_pageview.get("url", "")
+
+            session_data = {
+
+                "session_id": session.id,
+
+                "start_time": session.visited_at.isoformat() if session.visited_at else "",
+
+                "duration": session.duration or 0,
+
+                "referrer": session.referrer or "",
+
+                "entry_page": session.entry_page or "",
+
+                "exit_page": calculated_exit_page,
+
+                "pageviews": session_page_views
+
+            }
+
+            sessions_data.append(session_data)
+
+        
+
+        # Build visitor profile
+
+        visitor_profile = {
+
+            "visitor_id": visitor_id,
+
+            "ip": latest_visit.ip_address or "",
+
+            "isp": latest_visit.isp or "",
+
+            "country": latest_visit.country or "",
+
+            "city": latest_visit.city or "",
+
+            "lat": latest_visit.latitude or 0.0,
+
+            "lng": latest_visit.longitude or 0.0,
+
+            "device": latest_visit.device or "",
+
+            "os": latest_visit.os or "",
+
+            "browser": latest_visit.browser or "",
+
+            "resolution": latest_visit.screen_resolution or "",
+
+            "returning_visits": total_sessions - 1,  # Subtract 1 to exclude current session
+
+            "first_seen": latest_visit.visited_at.isoformat() if latest_visit.visited_at else ""
+
+        }
+
+        
+
+        response = {
+
+            "visitor": visitor_profile,
+
+            "sessions": sessions_data
+
+        }
+
+        
+
+        print(f"✅ Successfully returning visitor detail by IP with {len(sessions_data)} sessions")
+
+        return response
+
+        
+
+    except HTTPException:
+
+        raise
+
+    except Exception as e:
+
+        print(f"❌ Error in get_visitor_detail_by_ip: {e}")
 
         import traceback
 
