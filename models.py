@@ -202,3 +202,13 @@ class CartAction(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     
     visit = relationship("Visit")
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(String, index=True, nullable=False)
+    role = Column(String, nullable=False)  # 'user' or 'ai'
+    message = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)

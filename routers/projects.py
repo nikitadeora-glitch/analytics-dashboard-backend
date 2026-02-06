@@ -164,7 +164,7 @@ def get_all_projects_stats(
         q = (
             db.query(
                 models.Visit.project_id,
-                func.count(func.distinct(models.Visit.visitor_id))
+                func.count(func.distinct(models.Visit.visitor_id)).label("count")
             )
             .filter(models.Visit.project_id.in_(project_ids))
         )
@@ -197,6 +197,17 @@ def get_all_projects_stats(
     # -------------------------------
     # Response
     # -------------------------------
+    # User information first
+    user_info = {
+        "id": current_user.id,
+        "full_name": current_user.full_name,
+        "email": current_user.email,
+        "company_name": current_user.company_name,
+        "is_verified": current_user.is_verified,
+        "created_at": current_user.created_at
+    }
+
+    # Project data
     result = []
     for project in projects:
         result.append({
@@ -222,7 +233,15 @@ def get_all_projects_stats(
             "live_visitors": live_visitors.get(project.id, 0),
         })
 
-    return result
+    # Return response with user info first, then payload, then projects data
+    return {
+        "user": user_info,
+        "payload": {
+            "total_projects": len(projects),
+            "active_projects": len([p for p in projects if p.is_active])
+        },
+        "data": result
+    }
 
 
 # -------------------------------

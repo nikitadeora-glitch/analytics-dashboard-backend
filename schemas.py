@@ -128,3 +128,25 @@ class CartActionCreate(BaseModel):
     product_name: Optional[str] = None
     product_url: Optional[str] = None
     page_url: Optional[str] = None
+
+
+class ChatMessageCreate(BaseModel):
+    session_id: str
+    role: str  # 'user' or 'ai'
+    message: str
+
+
+class ChatMessageResponse(BaseModel):
+    id: int
+    session_id: str
+    role: str
+    message: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ChatHistoryResponse(BaseModel):
+    session_id: str
+    messages: List[ChatMessageResponse]
