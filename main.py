@@ -88,19 +88,13 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 # from fastapi.middleware.cors import CORSMiddleware
 
-# # ---------------------------------------------------
-# # FastAPI App
-# # ---------------------------------------------------
-# app = FastAPI(title="State Counter Analytics API")
+# ---------------------------------------------------
+# FastAPI App
+# ---------------------------------------------------
+app = FastAPI(title="State Counter Analytics API")
 
-# # Add CORS middleware
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origin_regex="https?://.*",  # 👈 ALL DOMAINS
-#     allow_credentials=True,           # 👈 COOKIES ALLOWED
-#     allow_methods=["*"],
-#     allow_headers=["*"],
-# )
+# Add Custom CORS middleware
+app.add_middleware(CustomCORSMiddleware)
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
