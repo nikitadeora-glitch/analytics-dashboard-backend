@@ -14,9 +14,7 @@ from logging_config import *
 logger = logging.getLogger("app")
 Base.metadata.create_all(bind=engine)
 
----------------------------------------------------
-Custom CORS Middleware (Allow Specific Origins with Credentials)
----------------------------------------------------
+
 class CustomCORSMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         origin = request.headers.get("origin")
