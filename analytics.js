@@ -589,7 +589,7 @@
       utm_campaign: trafficSource.utm_campaign
     };
 
-    const url = `${CONFIG.apiUrl}analytics/${CONFIG.projectId}/track`;
+    const url = `${CONFIG.apiUrl.replace(/\/$/, '')}/analytics/${CONFIG.projectId}/track`;
 
     log('📤 Tracking visit...');
     log('Data:', data);
@@ -631,7 +631,7 @@
       time_spent: 0  // Initial time is 0, will be updated on exit
     };
 
-    const apiUrl = `${CONFIG.apiUrl}analytics/${CONFIG.projectId}/pageview/${visitId}`;
+    const apiUrl = `${CONFIG.apiUrl.replace(/\/$/, '')}/analytics/${CONFIG.projectId}/pageview/${visitId}`;
 
     log('📄 Tracking page view:', data);
 
@@ -665,7 +665,7 @@
       time_spent: timeSpent
     };
 
-    const apiUrl = `${CONFIG.apiUrl}analytics/${CONFIG.projectId}/pageview/${visitId}/update/${pageViewId}`;
+    const apiUrl = `${CONFIG.apiUrl.replace(/\/$/, '')}/analytics/${CONFIG.projectId}/pageview/${visitId}/update/${pageViewId}`;
 
     log('⏱️ Updating time spent:', timeSpent + 's for pageview', pageViewId);
 
@@ -698,7 +698,7 @@
       time_spent: timeSpent
     };
 
-    const apiUrl = `${CONFIG.apiUrl}analytics/${CONFIG.projectId}/exit/${visitId}`;
+    const apiUrl = `${CONFIG.apiUrl.replace(/\/$/, '')}/analytics/${CONFIG.projectId}/exit/${visitId}`;
 
     log('🚪 Tracking exit:', data);
 
@@ -722,7 +722,7 @@
       from_page: window.location.href
     };
 
-    const apiUrl = `${CONFIG.apiUrl}analytics/${CONFIG.projectId}/exit-link`;
+    const apiUrl = `${CONFIG.apiUrl.replace(/\/$/, '')}/analytics/${CONFIG.projectId}/exit-link`;
 
     log('🔗 Tracking exit link:', data);
 
@@ -866,7 +866,7 @@
       page_url: window.location.href
     };
 
-    const apiUrl = `${CONFIG.apiUrl}analytics/${CONFIG.projectId}/cart-action/${visitId}`;
+    const apiUrl = `${CONFIG.apiUrl.replace(/\/$/, '')}/analytics/${CONFIG.projectId}/cart-action/${visitId}`;
 
     log('🛒 Tracking cart action:', data);
 
