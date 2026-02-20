@@ -91,7 +91,7 @@ def classify_source(referrer: str) -> str:
 FILTER_MAP = {
     "country_city": "country",
     "browser": "browser", 
-    "device": "device_type",
+    "device": "device",  # FIXED: Changed from device_type to device
     "utm_source": "utm_source",
     "utm_medium": "utm_medium",
     "utm_campaign": "utm_campaign",
@@ -144,9 +144,85 @@ def apply_filters_to_query(query, filters, db):
         # Handle regular filters
         elif filter_key in FILTER_MAP:
             db_field = FILTER_MAP[filter_key]
+            print(f"  Found filter in FILTER_MAP: {filter_key} -> {db_field}")
             
-            # Special handling for page_views_per_session (calculated metric)
-            if filter_key == "page_views_per_session":
+            # Special handling for browser filter (case-insensitive partial match)
+            if filter_key == "browser":
+                print(f"  BROWSER FILTER DETECTED: {filter_key} = {filter_value}")
+                # Check if there's an operator for this filter
+                operator_key = f"{filter_key}_operator"
+                operator = filters.get(operator_key, 'contains')
+                print(f"  Browser operator: {operator}")
+                
+                # Case-insensitive browser filtering with partial match
+                if operator == 'equals':
+                    print(f"  Applying case-insensitive browser filter: {db_field} = {filter_value}")
+                    query = query.filter(func.lower(getattr(models.Visit, db_field)) == func.lower(filter_value))
+                    print(f"    Applied case-insensitive {db_field} = {filter_value}")
+                elif operator == 'greater':
+                    query = query.filter(getattr(models.Visit, db_field) > float(filter_value))
+                elif operator == 'less':
+                    query = query.filter(getattr(models.Visit, db_field) < float(filter_value))
+                elif operator == 'greater_equal':
+                    query = query.filter(getattr(models.Visit, db_field) >= float(filter_value))
+                elif operator == 'less_equal':
+                    query = query.filter(getattr(models.Visit, db_field) <= float(filter_value))
+                else:  # Default to contains for browser (case-insensitive partial match)
+                    query = query.filter(getattr(models.Visit, db_field).ilike(f"%{filter_value}%"))
+                
+                print(f"    Applied {db_field} {operator} {filter_value} (case-insensitive partial match)")
+            # Special handling for device filter (case-insensitive)
+            elif filter_key == "device":
+                print(f"  DEVICE FILTER DETECTED: {filter_key} = {filter_value}")
+                # Check if there's an operator for this filter
+                operator_key = f"{filter_key}_operator"
+                operator = filters.get(operator_key, 'equals')
+                print(f"  Device operator: {operator}")
+                
+                # Case-insensitive device filtering
+                if operator == 'equals':
+                    print(f"  Applying case-insensitive device filter: {db_field} = {filter_value}")
+                    query = query.filter(func.lower(getattr(models.Visit, db_field)) == func.lower(filter_value))
+                    print(f"    ✅ Applied case-insensitive {db_field} = {filter_value}")
+                elif operator == 'greater':
+                    query = query.filter(getattr(models.Visit, db_field) > float(filter_value))
+                elif operator == 'less':
+                    query = query.filter(getattr(models.Visit, db_field) < float(filter_value))
+                elif operator == 'greater_equal':
+                    query = query.filter(getattr(models.Visit, db_field) >= float(filter_value))
+                elif operator == 'less_equal':
+                    query = query.filter(getattr(models.Visit, db_field) <= float(filter_value))
+                else:  # Default to contains for text fields (case-insensitive)
+                    query = query.filter(getattr(models.Visit, db_field).ilike(f"%{filter_value}%"))
+                
+                print(f"    ✅ Applied {db_field} {operator} {filter_value} (case-insensitive)")
+            # Special handling for OS filters (case-insensitive)
+            elif filter_key in ["platform_os", "system_platform_os"]:
+                print(f"  OS FILTER DETECTED: {filter_key} = {filter_value}")
+                # Check if there's an operator for this filter
+                operator_key = f"{filter_key}_operator"
+                operator = filters.get(operator_key, 'equals')
+                print(f"  OS operator: {operator}")
+                
+                # Case-insensitive OS filtering
+                if operator == 'equals':
+                    print(f"  Applying case-insensitive OS filter: {db_field} = {filter_value}")
+                    query = query.filter(func.lower(getattr(models.Visit, db_field)) == func.lower(filter_value))
+                    print(f"    Applied case-insensitive {db_field} = {filter_value}")
+                    print(f"    ✅ Applied case-insensitive {db_field} = {filter_value}")
+                elif operator == 'greater':
+                    query = query.filter(getattr(models.Visit, db_field) > float(filter_value))
+                elif operator == 'less':
+                    query = query.filter(getattr(models.Visit, db_field) < float(filter_value))
+                elif operator == 'greater_equal':
+                    query = query.filter(getattr(models.Visit, db_field) >= float(filter_value))
+                elif operator == 'less_equal':
+                    query = query.filter(getattr(models.Visit, db_field) <= float(filter_value))
+                else:  # Default to contains for text fields (case-insensitive)
+                    query = query.filter(getattr(models.Visit, db_field).ilike(f"%{filter_value}%"))
+                
+                print(f"    ✅ Applied {db_field} {operator} {filter_value} (case-insensitive)")
+            elif filter_key == "page_views_per_session":
                 # Check if there's an operator for this filter
                 operator_key = f"{filter_key}_operator"
                 operator = filters.get(operator_key, 'equals')
@@ -247,8 +323,8 @@ def apply_filters_to_query(query, filters, db):
                 
                 print(f"    ✅ Applied engagement_sessions_per_visitor {operator} {filter_value}")
             
-            # Special handling for page URL filtering (page, page_page, entry_page, last_page_of_session)
-            elif filter_key in ["page", "page_page", "entry_page", "last_page_of_session"]:
+            # Special handling for page URL filtering (page, page_page, entry_page, last_page_of_session, engagement_exit_link)
+            elif filter_key in ["page", "page_page", "entry_page", "last_page_of_session", "engagement_exit_link"]:
                 # Check if there's an operator for this filter
                 operator_key = f"{filter_key}_operator"
                 operator = filters.get(operator_key, 'contains')
@@ -537,6 +613,14 @@ def get_most_visited_pages(
             query = query.having(func.split_part(models.PageView.url, '?', 1).ilike(f"%{page_entry_page}%"))
             print(f"    ✅ Applied page_entry_page filter to most visited pages")
         
+        # Apply engagement_exit_link filtering if provided
+        if engagement_exit_link:
+            print(f"🔍 Applying engagement_exit_link filter: {engagement_exit_link}")
+            # For most visited pages, we filter on the base_url_exp which comes from PageView.url
+            # This needs to be applied after the main query but before grouping
+            query = query.having(func.split_part(models.PageView.url, '?', 1).ilike(f"%{engagement_exit_link}%"))
+            print(f"    ✅ Applied engagement_exit_link filter to most visited pages")
+        
         # Debug: Check if filters were actually applied
         print(f"🔍 Query after filters applied: {query}")
         print(f"🔍 Filtered query will be executed...")
@@ -758,6 +842,13 @@ def get_entry_pages(
             # For entry pages, we filter on the entry_page field
             query = query.having(func.split_part(models.Visit.entry_page, '?', 1).ilike(f"%{page_entry_page}%"))
             print(f"    ✅ Applied page_entry_page filter to entry pages")
+
+        # Apply engagement_exit_link filtering if provided
+        if engagement_exit_link:
+            print(f"🔍 Applying engagement_exit_link filter to entry pages: {engagement_exit_link}")
+            # For entry pages, we filter on the entry_page field
+            query = query.having(func.split_part(models.Visit.entry_page, '?', 1).ilike(f"%{engagement_exit_link}%"))
+            print(f"    ✅ Applied engagement_exit_link filter to entry pages")
 
         # Apply pagination
         entry_pages = (
@@ -1014,9 +1105,13 @@ def get_exit_pages(
             # Apply page_page filter if provided
             if page_page and page_page.lower() not in base_url.lower():
                 continue  # Skip this page if it doesn't match the filter
-            
+        
             # Apply page_entry_page filter if provided
             if page_entry_page and page_entry_page.lower() not in base_url.lower():
+                continue  # Skip this page if it doesn't match the filter
+        
+            # Apply engagement_exit_link filter if provided
+            if engagement_exit_link and engagement_exit_link.lower() not in base_url.lower():
                 continue  # Skip this page if it doesn't match the filter
                 
             exit_page_counts[base_url] = exit_page_counts.get(base_url, 0) + 1
