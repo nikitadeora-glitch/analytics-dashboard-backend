@@ -71,6 +71,64 @@ security = HTTPBearer(auto_error=False)
 
 
 
+@router.get("/countries")
+def get_all_countries(db: Session = Depends(get_db)):
+    """
+    Get all unique countries from the visits table
+    """
+    try:
+        # Query all distinct countries
+        countries = db.query(models.Visit.country)\
+                     .filter(models.Visit.country.isnot(None))\
+                     .filter(models.Visit.country != '')\
+                     .distinct()\
+                     .order_by(models.Visit.country)\
+                     .all()
+        
+        # Extract country names from tuples
+        country_list = [country[0] for country in countries if country[0]]
+        
+        return {
+            "countries": country_list,
+            "count": len(country_list)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching countries: {str(e)}")
+
+
+@router.get("/country-cities")
+def get_country_cities(db: Session = Depends(get_db)):
+    """
+    Get all unique country-city combinations from the visits table
+    """
+    try:
+        # Query all distinct country-city combinations
+        country_cities = db.query(
+                models.Visit.country,
+                models.Visit.city
+            )\
+            .filter(models.Visit.country.isnot(None))\
+            .filter(models.Visit.country != '')\
+            .distinct()\
+            .order_by(models.Visit.country, models.Visit.city)\
+            .all()
+        
+        # Group by country
+        result = {}
+        for country, city in country_cities:
+            if country and country not in result:
+                result[country] = []
+            if city and city not in result[country]:
+                result[country].append(city)
+        
+        return {
+            "country_cities": result,
+            "count": len(result)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching country cities: {str(e)}")
+
+
 def get_current_user_optional(
 
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
@@ -279,6 +337,36 @@ def get_visitor_activity_view(
 
     limit: Optional[int] = None,
 
+    # Filter parameters
+    country_city: Optional[str] = None,
+    traffic_sources: Optional[str] = None,
+    page_page: Optional[str] = None,
+    entry_page: Optional[str] = None,
+    page_entry_page: Optional[str] = None,
+    ip_address: Optional[str] = None,
+    location_ip_address: Optional[str] = None,
+    platform_os: Optional[str] = None,
+    system_platform_os: Optional[str] = None,
+    engagement_session_length: Optional[str] = None,
+    engagement_session_length_min: Optional[str] = None,
+    engagement_session_length_max: Optional[str] = None,
+    engagement_session_length_operator: Optional[str] = None,
+    page_views_per_session: Optional[str] = None,
+    page_views_per_session_operator: Optional[str] = None,
+    sessions_per_visitor: Optional[str] = None,
+    sessions_per_visitor_operator: Optional[str] = None,
+    engagement_sessions_per_visitor: Optional[str] = None,
+    engagement_sessions_per_visitor_operator: Optional[str] = None,
+    utm_campaign: Optional[str] = None,
+    utm_source: Optional[str] = None,
+    utm_medium: Optional[str] = None,
+    exit_link: Optional[str] = None,
+    engagement_exit_link: Optional[str] = None,
+    
+    # System filters
+    browser: Optional[str] = None,
+    device: Optional[str] = None,
+
     db: Session = Depends(get_db),
 
     current_user: Optional[models.User] = Depends(get_current_user_optional)
@@ -360,9 +448,242 @@ def get_visitor_activity_view(
                 pass
 
         
+        # Apply additional filters
+        print(f"🔍 Applying filters - country_city: {country_city}, traffic_sources: {traffic_sources}, page_entry_page: {page_entry_page}")
+        print(f"🔍 OS filters - platform_os: {platform_os}, system_platform_os: {system_platform_os}")
+        print(f"🔍 System filters - browser: {browser}, device: {device}")
+        print(f"🔍 Session length params - min: {engagement_session_length_min}, max: {engagement_session_length_max}, operator: {engagement_session_length_operator}")
+        
+        # Country/City filter
+        if country_city:
+            if ',' in country_city:
+                # Country,City format
+                parts = country_city.split(',', 1)
+                country_filter = parts[0].strip()
+                city_filter = parts[1].strip() if len(parts) > 1 else None
+                
+                query = query.filter(models.Visit.country == country_filter)
+                if city_filter:
+                    query = query.filter(models.Visit.city == city_filter)
+            else:
+                # Country only
+                query = query.filter(models.Visit.country == country_city)
+        
+        # Traffic sources filter
+        if traffic_sources:
+            if traffic_sources == 'direct':
+                query = query.filter(models.Visit.referrer == 'direct')
+            elif traffic_sources == 'organic':
+                query = query.filter(models.Visit.referrer.like('%google%') | 
+                                       models.Visit.referrer.like('%bing%') | 
+                                       models.Visit.referrer.like('%yahoo%'))
+            elif traffic_sources == 'referral':
+                query = query.filter(models.Visit.referrer != 'direct',
+                                       ~models.Visit.referrer.like('%google%'),
+                                       ~models.Visit.referrer.like('%bing%'),
+                                       ~models.Visit.referrer.like('%yahoo%'))
+            elif traffic_sources == 'social':
+                query = query.filter(models.Visit.referrer.like('%facebook%') | 
+                                       models.Visit.referrer.like('%twitter%') | 
+                                       models.Visit.referrer.like('%linkedin%') |
+                                       models.Visit.referrer.like('%instagram%'))
+        
+        # Page filters
+        if page_page:
+            query = query.filter(models.Visit.entry_page.like(f'%{page_page}%'))
+        
+        if entry_page:
+            query = query.filter(models.Visit.entry_page.like(f'%{entry_page}%'))
+        
+        if page_entry_page:
+            print(f"🔍 Applying page_entry_page filter: {page_entry_page}")
+            query = query.filter(models.Visit.entry_page.like(f'%{page_entry_page}%'))
+        
+        # IP Address filter
+        if ip_address:
+            query = query.filter(models.Visit.ip_address.like(f'%{ip_address}%'))
+        
+        # Location IP Address filter
+        if location_ip_address:
+            query = query.filter(models.Visit.ip_address.like(f'%{location_ip_address}%'))
+            print(f"🔍 Applied location_ip_address filter: {location_ip_address}")
+        
+        # Platform/OS filter - handle both platform_os and system_platform_os parameters
+        os_filter = platform_os or system_platform_os
+        if os_filter:
+            query = query.filter(models.Visit.os.like(f'%{os_filter}%'))
+            print(f"🔍 Applied OS filter: {os_filter}")
+        
+        # Browser filter
+        if browser:
+            query = query.filter(models.Visit.browser.like(f'%{browser}%'))
+            print(f"🔍 Applied browser filter: {browser}")
+        
+        # Device filter
+        if device:
+            query = query.filter(models.Visit.device.like(f'%{device}%'))
+            print(f"🔍 Applied device filter: {device}")
+        
+        # UTM filters
+        if utm_campaign:
+            query = query.filter(models.Visit.utm_campaign.like(f'%{utm_campaign}%'))
+        
+        if utm_source:
+            query = query.filter(models.Visit.utm_source.like(f'%{utm_source}%'))
+        
+        if utm_medium:
+            query = query.filter(models.Visit.utm_medium.like(f'%{utm_medium}%'))
+        
+        # Exit link filters
+        if exit_link or engagement_exit_link:
+            exit_link_filter = exit_link or engagement_exit_link
+            print(f"🔍 Applying exit link filter: {exit_link_filter}")
+            
+            # Subquery to find visits that have exit link clicks matching the filter
+            exit_link_subquery = db.query(models.ExitLinkClick.visitor_id)\
+                .filter(models.ExitLinkClick.project_id == project_id)\
+                .filter(models.ExitLinkClick.url.like(f'%{exit_link_filter}%'))\
+                .distinct()\
+                .subquery()
+            
+            # Filter visits to only include those with matching exit link clicks
+            query = query.filter(models.Visit.visitor_id.in_(exit_link_subquery))
+            print(f"🔍 Applied exit link filter: {exit_link_filter}")
+        
+        # Session length filters (engagement_session_length_min/max/operator)
+        if engagement_session_length_min and engagement_session_length_operator:
+            try:
+                min_duration = int(engagement_session_length_min)
+                
+                if engagement_session_length_operator == 'equals':
+                    # If both min and max are provided with equals operator, treat as range
+                    if engagement_session_length_max:
+                        max_duration = int(engagement_session_length_max)
+                        query = query.filter(models.Visit.session_duration >= min_duration,
+                                           models.Visit.session_duration <= max_duration)
+                        print(f"🔍 Applied session length filter (equals with range): {min_duration} to {max_duration} seconds")
+                    else:
+                        # Single value equals
+                        query = query.filter(models.Visit.session_duration == min_duration)
+                        print(f"🔍 Applied session length filter: equals {min_duration} seconds")
+                elif engagement_session_length_operator == 'greater_than':
+                    query = query.filter(models.Visit.session_duration > min_duration)
+                    print(f"🔍 Applied session length filter: greater_than {min_duration} seconds")
+                elif engagement_session_length_operator == 'less_than':
+                    query = query.filter(models.Visit.session_duration < min_duration)
+                    print(f"🔍 Applied session length filter: less_than {min_duration} seconds")
+                elif engagement_session_length_operator == 'range' and engagement_session_length_max:
+                    max_duration = int(engagement_session_length_max)
+                    query = query.filter(models.Visit.session_duration >= min_duration,
+                                       models.Visit.session_duration <= max_duration)
+                    print(f"🔍 Applied session length filter: range {min_duration} to {max_duration} seconds")
+                else:
+                    print(f"❌ Unsupported session length operator: {engagement_session_length_operator}")
+            except ValueError:
+                print(f"❌ Invalid session length value: {engagement_session_length_min}")
+        elif engagement_session_length_min and engagement_session_length_max:
+            # Fallback to range filter if no operator specified
+            try:
+                min_duration = int(engagement_session_length_min)
+                max_duration = int(engagement_session_length_max)
+                query = query.filter(models.Visit.session_duration >= min_duration,
+                                   models.Visit.session_duration <= max_duration)
+                print(f"🔍 Applied session length range filter: {min_duration} to {max_duration} seconds")
+            except ValueError:
+                print(f"❌ Invalid session length values: {engagement_session_length_min}, {engagement_session_length_max}")
+        
+        # Page views per session filter
+        if page_views_per_session and page_views_per_session_operator:
+            try:
+                page_views_count = int(page_views_per_session)
+                
+                # Subquery to count page views per visit
+                page_views_subquery = db.query(
+                    models.PageView.visit_id,
+                    func.count(models.PageView.id).label('page_views_count')
+                ).group_by(models.PageView.visit_id).subquery()
+                
+                # Join with the subquery
+                query = query.join(page_views_subquery, models.Visit.id == page_views_subquery.c.visit_id)
+                
+                if page_views_per_session_operator == 'equals':
+                    query = query.filter(page_views_subquery.c.page_views_count == page_views_count)
+                elif page_views_per_session_operator == 'greater_than':
+                    query = query.filter(page_views_subquery.c.page_views_count > page_views_count)
+                elif page_views_per_session_operator == 'less_than':
+                    query = query.filter(page_views_subquery.c.page_views_count < page_views_count)
+                print(f"🔍 Applied page views filter: {page_views_per_session_operator} {page_views_count}")
+            except ValueError:
+                print(f"❌ Invalid page views value: {page_views_per_session}")
+        
+        # Sessions per visitor filter  
+        if sessions_per_visitor and sessions_per_visitor_operator:
+            try:
+                sessions_count = int(sessions_per_visitor)
+                if sessions_per_visitor_operator == 'equals':
+                    # Subquery for session count per visitor
+                    subquery = db.query(models.Visit.visitor_id,
+                                     func.count(models.Visit.id).label('session_count'))\
+                                 .filter(models.Visit.project_id == project_id)\
+                                 .group_by(models.Visit.visitor_id)\
+                                 .subquery()
+                    query = query.join(subquery, models.Visit.visitor_id == subquery.c.visitor_id)\
+                             .filter(subquery.c.session_count == sessions_count)
+                elif sessions_per_visitor_operator == 'greater_than':
+                    subquery = db.query(models.Visit.visitor_id,
+                                     func.count(models.Visit.id).label('session_count'))\
+                                 .filter(models.Visit.project_id == project_id)\
+                                 .group_by(models.Visit.visitor_id)\
+                                 .subquery()
+                    query = query.join(subquery, models.Visit.visitor_id == subquery.c.visitor_id)\
+                             .filter(subquery.c.session_count > sessions_count)
+                elif sessions_per_visitor_operator == 'less_than':
+                    subquery = db.query(models.Visit.visitor_id,
+                                     func.count(models.Visit.id).label('session_count'))\
+                                 .filter(models.Visit.project_id == project_id)\
+                                 .group_by(models.Visit.visitor_id)\
+                                 .subquery()
+                    query = query.join(subquery, models.Visit.visitor_id == subquery.c.visitor_id)\
+                             .filter(subquery.c.session_count < sessions_count)
+                print(f"🔍 Applied sessions per visitor filter: {sessions_per_visitor_operator} {sessions_count}")
+            except ValueError:
+                print(f"❌ Invalid sessions per visitor value: {sessions_per_visitor}")
+        
+        # Engagement sessions per visitor filter  
+        if engagement_sessions_per_visitor and engagement_sessions_per_visitor_operator:
+            try:
+                sessions_count = int(engagement_sessions_per_visitor)
+                if engagement_sessions_per_visitor_operator == 'equals':
+                    # Subquery for session count per visitor
+                    subquery = db.query(models.Visit.visitor_id,
+                                     func.count(models.Visit.id).label('session_count'))\
+                                 .filter(models.Visit.project_id == project_id)\
+                                 .group_by(models.Visit.visitor_id)\
+                                 .subquery()
+                    query = query.join(subquery, models.Visit.visitor_id == subquery.c.visitor_id)\
+                             .filter(subquery.c.session_count == sessions_count)
+                elif engagement_sessions_per_visitor_operator == 'greater_than':
+                    subquery = db.query(models.Visit.visitor_id,
+                                     func.count(models.Visit.id).label('session_count'))\
+                                 .filter(models.Visit.project_id == project_id)\
+                                 .group_by(models.Visit.visitor_id)\
+                                 .subquery()
+                    query = query.join(subquery, models.Visit.visitor_id == subquery.c.visitor_id)\
+                             .filter(subquery.c.session_count > sessions_count)
+                elif engagement_sessions_per_visitor_operator == 'less_than':
+                    subquery = db.query(models.Visit.visitor_id,
+                                     func.count(models.Visit.id).label('session_count'))\
+                                 .filter(models.Visit.project_id == project_id)\
+                                 .group_by(models.Visit.visitor_id)\
+                                 .subquery()
+                    query = query.join(subquery, models.Visit.visitor_id == subquery.c.visitor_id)\
+                             .filter(subquery.c.session_count < sessions_count)
+                print(f"🔍 Applied engagement sessions per visitor filter: {engagement_sessions_per_visitor_operator} {sessions_count}")
+            except ValueError:
+                print(f"❌ Invalid engagement sessions per visitor value: {engagement_sessions_per_visitor}")
+        
 
-        # Get all visits filtered by date range - apply limit only if provided
-
+        # Get all visits filtered by date range and other filters - apply limit only if provided
         if limit is not None:
 
             visits = query.order_by(desc(models.Visit.visited_at)).limit(limit).all()
@@ -1075,7 +1396,6 @@ def get_visitor_map(project_id: int, db: Session = Depends(get_db)):
         "longitude": loc[4],
 
         "count": loc[5]
-
     } for loc in locations]
 
 
@@ -1083,81 +1403,195 @@ def get_visitor_map(project_id: int, db: Session = Depends(get_db)):
 @router.get("/{project_id}/map-view")
 
 def get_map_view(
-
     project_id: int, 
-
-    days: int = 30, 
-
+    days: int = 30,
+    country_city: Optional[str] = None,
+    browser: Optional[str] = None,
+    device: Optional[str] = None,
+    platform_os: Optional[str] = None,
+    system_platform_os: Optional[str] = None,
+    page_views_per_session: Optional[str] = None,
+    page_views_per_session_min: Optional[int] = None,
+    page_views_per_session_max: Optional[int] = None,
+    page_views_per_session_operator: Optional[str] = None,
+    engagement_session_length: Optional[str] = None,
+    engagement_session_length_min: Optional[int] = None,
+    engagement_session_length_max: Optional[int] = None,
+    engagement_session_length_operator: Optional[str] = None,
+    engagement_sessions_per_visitor: Optional[str] = None,
+    engagement_sessions_per_visitor_operator: Optional[str] = None,
+    traffic_sources: Optional[str] = None,
+    page_page: Optional[str] = None,
+    page_entry_page: Optional[str] = None,
+    location_ip_address: Optional[str] = None,
+    engagement_exit_link: Optional[str] = None,
     db: Session = Depends(get_db)
-
 ):
-
     """
-
     Dedicated endpoint for Visitor Map Page.
-
     Supports filtering by days and returns aggregated location data.
-
     """
+    
+    print(f" get_map_view called with:")
+    print(f"  - project_id: {project_id}")
+    print(f"  - days: {days}")
+    print(f"  - country_city: {country_city}")
+    print(f"  - browser: {browser}")
+    print(f"  - device: {device}")
+    print(f"  - platform_os: {platform_os}")
+    print(f"  - system_platform_os: {system_platform_os}")
+    print(f"  - engagement_sessions_per_visitor: {engagement_sessions_per_visitor}")
+    print(f"  - engagement_sessions_per_visitor_operator: {engagement_sessions_per_visitor_operator}")
+    print(f"  - traffic_sources: {traffic_sources}")
+    print(f"  - page_page: {page_page}")
+    print(f"  - page_entry_page: {page_entry_page}")
+    print(f"  - location_ip_address: {location_ip_address}")
+    print(f"  - engagement_exit_link: {engagement_exit_link}")
 
     start_date_ist = utils.get_ist_start_of_day(days - 1)
-
     start_date_utc = utils.ist_to_utc(start_date_ist)
 
-    
-
-    locations = db.query(
-
+    # Build base query with filters
+    query = db.query(
         models.Visit.country,
-
         models.Visit.state,
-
         models.Visit.city,
-
         models.Visit.latitude,
-
         models.Visit.longitude,
-
         func.count(models.Visit.id).label('count')
-
     ).filter(
-
         models.Visit.project_id == project_id,
-
         models.Visit.latitude.isnot(None),
-
         models.Visit.visited_at >= start_date_utc
+    )
 
-    ).group_by(
-
-        models.Visit.country,
-
-        models.Visit.state,
-
-        models.Visit.city,
-
-        models.Visit.latitude,
-
-        models.Visit.longitude
-
-    ).all()
-
+    # Apply filters
+    if country_city:
+        query = query.filter(models.Visit.country == country_city)
     
+    if browser:
+        query = query.filter(models.Visit.browser == browser)
+    
+    if device:
+        query = query.filter(models.Visit.device == device)
+    
+    # Handle both platform_os and system_platform_os parameters
+    os_filter = platform_os or system_platform_os
+    if os_filter:
+        query = query.filter(models.Visit.os == os_filter)
+    
+    if traffic_sources:
+        query = query.filter(models.Visit.referrer.like(f'%{traffic_sources}%'))
+    
+    if page_page:
+        query = query.filter(
+            (models.Visit.entry_page.like(f'%{page_page}%')) |
+            (models.Visit.exit_page.like(f'%{page_page}%'))
+        )
+    
+    if page_entry_page:
+        query = query.filter(models.Visit.entry_page.like(f'%{page_entry_page}%'))
+    
+    # Handle page_views_per_session filter with operator
+    if page_views_per_session and page_views_per_session_operator:
+        try:
+            page_views_count = int(page_views_per_session)
+            
+            # Subquery to count page views per visit
+            page_views_subquery = db.query(
+                models.PageView.visit_id,
+                func.count(models.PageView.id).label('page_views_count')
+            ).group_by(models.PageView.visit_id).subquery()
+            
+            # Join with the subquery
+            query = query.join(page_views_subquery, models.Visit.id == page_views_subquery.c.visit_id)
+            
+            if page_views_per_session_operator == 'equals':
+                query = query.filter(page_views_subquery.c.page_views_count == page_views_count)
+            elif page_views_per_session_operator == 'greater_than':
+                query = query.filter(page_views_subquery.c.page_views_count > page_views_count)
+            elif page_views_per_session_operator == 'less_than':
+                query = query.filter(page_views_subquery.c.page_views_count < page_views_count)
+            print(f" Applied page views filter: {page_views_per_session_operator} {page_views_count}")
+        except ValueError:
+            print(f" Invalid page views value: {page_views_per_session}")
+    
+    # Handle legacy page_views_per_session range filters (for backward compatibility)
+    elif page_views_per_session_min is not None:
+        query = query.filter(models.Visit.page_views >= page_views_per_session_min)
+    
+    if page_views_per_session_max is not None:
+        query = query.filter(models.Visit.page_views <= page_views_per_session_max)
+    
+    # Handle engagement_session_length range filters
+    if engagement_session_length_min is not None:
+        query = query.filter(models.Visit.session_duration >= engagement_session_length_min)
+    
+    if engagement_session_length_max is not None:
+        query = query.filter(models.Visit.session_duration <= engagement_session_length_max)
 
+    # Handle engagement_sessions_per_visitor filter with operator
+    if engagement_sessions_per_visitor and engagement_sessions_per_visitor_operator:
+        try:
+            sessions_count = int(engagement_sessions_per_visitor)
+            
+            # Subquery to count sessions per visitor
+            sessions_subquery = db.query(
+                models.Visit.visitor_id,
+                func.count(models.Visit.id).label('sessions_count')
+            ).filter(
+                models.Visit.project_id == project_id,
+                models.Visit.visited_at >= start_date_utc
+            ).group_by(models.Visit.visitor_id).subquery()
+            
+            # Join with the subquery
+            query = query.join(sessions_subquery, models.Visit.visitor_id == sessions_subquery.c.visitor_id)
+            
+            if engagement_sessions_per_visitor_operator == 'equals':
+                query = query.filter(sessions_subquery.c.sessions_count == sessions_count)
+            elif engagement_sessions_per_visitor_operator == 'greater_than':
+                query = query.filter(sessions_subquery.c.sessions_count > sessions_count)
+            elif engagement_sessions_per_visitor_operator == 'less_than':
+                query = query.filter(sessions_subquery.c.sessions_count < sessions_count)
+            print(f" Applied sessions per visitor filter: {engagement_sessions_per_visitor_operator} {sessions_count}")
+        except ValueError:
+            print(f" Invalid sessions per visitor value: {engagement_sessions_per_visitor}")
+
+    # Handle location_ip_address filter
+    if location_ip_address:
+        query = query.filter(models.Visit.ip_address.like(f'%{location_ip_address}%'))
+
+    # Handle engagement_exit_link filter
+    if engagement_exit_link:
+        print(f" Applying engagement_exit_link filter: {engagement_exit_link}")
+        
+        # Subquery to find visits that have exit link clicks matching the filter
+        exit_link_subquery = db.query(models.ExitLinkClick.visitor_id)\
+            .filter(models.ExitLinkClick.project_id == project_id)\
+            .filter(models.ExitLinkClick.clicked_at >= start_date_utc)\
+            .filter(models.ExitLinkClick.url.like(f'%{engagement_exit_link}%'))\
+            .distinct()\
+            .subquery()
+        
+        # Filter visits to only include those with matching exit link clicks
+        query = query.filter(models.Visit.visitor_id.in_(exit_link_subquery))
+        print(f" Applied engagement_exit_link filter: {engagement_exit_link}")
+
+    locations = query.group_by(
+        models.Visit.country,
+        models.Visit.state,
+        models.Visit.city,
+        models.Visit.latitude,
+        models.Visit.longitude
+    ).all()
+    
     return [{
-
         "country": loc[0],
-
         "state": loc[1],
-
         "city": loc[2],
-
         "latitude": loc[3],
-
         "longitude": loc[4],
-
         "count": loc[5]
-
     } for loc in locations]
 
 

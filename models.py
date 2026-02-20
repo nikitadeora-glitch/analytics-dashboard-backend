@@ -108,6 +108,11 @@ class Visit(Base):
     is_unique = Column(Boolean, default=True)
     is_new_session = Column(Boolean, default=True)
     
+    # UTM tracking fields
+    utm_source = Column(String)
+    utm_medium = Column(String)
+    utm_campaign = Column(String)
+    
     project = relationship("Project", back_populates="visits")
     page_views = relationship("PageView", back_populates="visit")
 

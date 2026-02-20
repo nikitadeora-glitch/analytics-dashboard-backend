@@ -95,8 +95,8 @@ FILTER_MAP = {
     "utm_source": "utm_source",
     "utm_medium": "utm_medium",
     "utm_campaign": "utm_campaign",
-    "platform_os": "os",
-    "system_platform_os": "os",
+    "language": "language",
+    "platform_os": "platform",
     "session_length": "session_duration",
     "engagement_session_length": "session_duration",
     "page_views": "page_views_count",
@@ -110,7 +110,7 @@ FILTER_MAP = {
     "page": "page",
     "page_page": "page",
     "entry_page": "entry_page",
-    "location_ip_address": "ip_address"
+    "last_page_of_session": "last_page_of_session"
 }
 
 def apply_filters_to_query(query, filters, db):
@@ -253,14 +253,19 @@ def apply_filters_to_query(query, filters, db):
                 operator_key = f"{filter_key}_operator"
                 operator = filters.get(operator_key, 'contains')
                 
-                # For page filtering, we need to handle it at the endpoint level since each endpoint has different page fields
-                # We'll add a marker that the endpoint will handle
-                if hasattr(query, 'page_filter_applied'):
-                    query.page_filter_applied = True
+                # For page filtering, we need to handle it differently based on the context
+                # The filtering will be applied at the endpoint level since each endpoint has different page fields
+                if operator == 'equals':
+                    # For exact match, we'll use ILIKE with the exact value
+                    query = query.filter(getattr(models.PageView, "url").ilike(f"%{filter_value}%"))
+                elif operator == 'contains':
+                    # For contains, use ILIKE with wildcards
+                    query = query.filter(getattr(models.PageView, "url").ilike(f"%{filter_value}%"))
                 else:
-                    query.page_filter_applied = True
+                    # Default to contains behavior
+                    query = query.filter(getattr(models.PageView, "url").ilike(f"%{filter_value}%"))
                 
-                print(f"    📝 Page filter {filter_key} {operator} {filter_value} marked for endpoint-level processing")
+                print(f"    ✅ Applied {filter_key} {operator} {filter_value}")
             
             # Special handling for traffic_sources (classification-based filtering)
             elif filter_key == "traffic_sources":
@@ -405,7 +410,6 @@ def get_most_visited_pages(
     traffic_utm_source: Optional[str] = Query(None),
     language: Optional[str] = Query(None),
     platform_os: Optional[str] = Query(None),
-    system_platform_os: Optional[str] = Query(None),
     session_length_min: Optional[str] = Query(None),
     session_length_max: Optional[str] = Query(None),
     engagement_session_length_min: Optional[str] = Query(None),
@@ -417,8 +421,6 @@ def get_most_visited_pages(
     engagement_exit_link: Optional[str] = Query(None),
     traffic_sources: Optional[str] = Query(None),
     page_page: Optional[str] = Query(None),
-    page_entry_page: Optional[str] = Query(None),
-    location_ip_address: Optional[str] = Query(None),
     # Operator parameters
     country_city_operator: Optional[str] = Query(None),
     browser_operator: Optional[str] = Query(None),
@@ -430,7 +432,6 @@ def get_most_visited_pages(
     traffic_utm_source_operator: Optional[str] = Query(None),
     language_operator: Optional[str] = Query(None),
     platform_os_operator: Optional[str] = Query(None),
-    system_platform_os_operator: Optional[str] = Query(None),
     session_length_operator: Optional[str] = Query(None),
     engagement_session_length_operator: Optional[str] = Query(None),
     page_views_operator: Optional[str] = Query(None),
@@ -438,8 +439,7 @@ def get_most_visited_pages(
     sessions_per_visitor_operator: Optional[str] = Query(None),
     engagement_sessions_per_visitor_operator: Optional[str] = Query(None),
     engagement_exit_link_operator: Optional[str] = Query(None),
-    page_page_operator: Optional[str] = Query(None),
-    location_ip_address_operator: Optional[str] = Query(None),
+    page_page_operator: Optional[str] = Query(None)
 ):
     """Optimized most visited pages with visit data included"""
     try:
@@ -459,7 +459,6 @@ def get_most_visited_pages(
             'traffic_utm_source': traffic_utm_source,
             'language': language,
             'platform_os': platform_os,
-            'system_platform_os': system_platform_os,
             'session_length_min': session_length_min,
             'session_length_max': session_length_max,
             'engagement_session_length_min': engagement_session_length_min,
@@ -469,9 +468,7 @@ def get_most_visited_pages(
             'sessions_per_visitor': sessions_per_visitor,
             'engagement_sessions_per_visitor': engagement_sessions_per_visitor,
             'engagement_exit_link': engagement_exit_link,
-            'traffic_sources': traffic_sources,            'page_page': page_page,
-            'page_entry_page': page_entry_page,
-            'location_ip_address': location_ip_address,
+            'traffic_sources': traffic_sources,
             'country_city_operator': country_city_operator,
             'browser_operator': browser_operator,
             'device_operator': device_operator,
@@ -482,15 +479,13 @@ def get_most_visited_pages(
             'traffic_utm_source_operator': traffic_utm_source_operator,
             'language_operator': language_operator,
             'platform_os_operator': platform_os_operator,
-            'system_platform_os_operator': system_platform_os_operator,
             'session_length_operator': session_length_operator,
             'engagement_session_length_operator': engagement_session_length_operator,
             'page_views_operator': page_views_operator,
             'page_views_per_session_operator': page_views_per_session_operator,
             'sessions_per_visitor_operator': sessions_per_visitor_operator,
             'engagement_sessions_per_visitor_operator': engagement_sessions_per_visitor_operator,
-            'engagement_exit_link_operator': engagement_exit_link_operator,            'page_page_operator': page_page_operator,
-            'location_ip_address_operator': location_ip_address_operator
+            'engagement_exit_link_operator': engagement_exit_link_operator
         }
         
         # Remove None values
@@ -520,22 +515,6 @@ def get_most_visited_pages(
         # Apply custom filters
         print(f"🔍 DEBUG: Filters being passed to apply_filters_to_query: {filters}")
         query = apply_filters_to_query(query, filters, db)
-        
-        # Apply page-specific filtering if page_page filter is provided
-        if page_page:
-            print(f"🔍 Applying page_page filter: {page_page}")
-            # For most visited pages, we filter on the base_url_exp which comes from PageView.url
-            # This needs to be applied after the main query but before grouping
-            query = query.having(func.split_part(models.PageView.url, '?', 1).ilike(f"%{page_page}%"))
-            print(f"    ✅ Applied page_page filter to most visited pages")
-        
-        # Apply page_entry_page filtering if provided
-        if page_entry_page:
-            print(f"🔍 Applying page_entry_page filter: {page_entry_page}")
-            # For most visited pages, we filter on the base_url_exp which comes from PageView.url
-            # This needs to be applied after the main query but before grouping
-            query = query.having(func.split_part(models.PageView.url, '?', 1).ilike(f"%{page_entry_page}%"))
-            print(f"    ✅ Applied page_entry_page filter to most visited pages")
         
         # Debug: Check if filters were actually applied
         print(f"🔍 Query after filters applied: {query}")
@@ -632,7 +611,6 @@ def get_entry_pages(
     traffic_utm_source: Optional[str] = Query(None),
     language: Optional[str] = Query(None),
     platform_os: Optional[str] = Query(None),
-    system_platform_os: Optional[str] = Query(None),
     session_length_min: Optional[str] = Query(None),
     session_length_max: Optional[str] = Query(None),
     engagement_session_length_min: Optional[str] = Query(None),
@@ -643,9 +621,6 @@ def get_entry_pages(
     engagement_sessions_per_visitor: Optional[str] = Query(None),
     engagement_exit_link: Optional[str] = Query(None),
     traffic_sources: Optional[str] = Query(None),
-    page_page: Optional[str] = Query(None),
-    page_entry_page: Optional[str] = Query(None),
-    location_ip_address: Optional[str] = Query(None),
     # Operator parameters
     country_city_operator: Optional[str] = Query(None),
     browser_operator: Optional[str] = Query(None),
@@ -657,16 +632,13 @@ def get_entry_pages(
     traffic_utm_source_operator: Optional[str] = Query(None),
     language_operator: Optional[str] = Query(None),
     platform_os_operator: Optional[str] = Query(None),
-    system_platform_os_operator: Optional[str] = Query(None),
     session_length_operator: Optional[str] = Query(None),
     engagement_session_length_operator: Optional[str] = Query(None),
     page_views_operator: Optional[str] = Query(None),
     page_views_per_session_operator: Optional[str] = Query(None),
     sessions_per_visitor_operator: Optional[str] = Query(None),
     engagement_sessions_per_visitor_operator: Optional[str] = Query(None),
-    engagement_exit_link_operator: Optional[str] = Query(None),
-    page_page_operator: Optional[str] = Query(None),
-    location_ip_address_operator: Optional[str] = Query(None),
+    engagement_exit_link_operator: Optional[str] = Query(None)
 ):
     """Optimized entry pages with chunked loading"""
     try:
@@ -685,7 +657,6 @@ def get_entry_pages(
             'traffic_utm_source': traffic_utm_source,
             'language': language,
             'platform_os': platform_os,
-            'system_platform_os': system_platform_os,
             'session_length_min': session_length_min,
             'session_length_max': session_length_max,
             'engagement_session_length_min': engagement_session_length_min,
@@ -695,9 +666,7 @@ def get_entry_pages(
             'sessions_per_visitor': sessions_per_visitor,
             'engagement_sessions_per_visitor': engagement_sessions_per_visitor,
             'engagement_exit_link': engagement_exit_link,
-            'traffic_sources': traffic_sources,            'page_page': page_page,
-            'page_entry_page': page_entry_page,
-            'location_ip_address': location_ip_address,
+            'traffic_sources': traffic_sources,
             'country_city_operator': country_city_operator,
             'browser_operator': browser_operator,
             'device_operator': device_operator,
@@ -708,15 +677,13 @@ def get_entry_pages(
             'traffic_utm_source_operator': traffic_utm_source_operator,
             'language_operator': language_operator,
             'platform_os_operator': platform_os_operator,
-            'system_platform_os_operator': system_platform_os_operator,
             'session_length_operator': session_length_operator,
             'engagement_session_length_operator': engagement_session_length_operator,
             'page_views_operator': page_views_operator,
             'page_views_per_session_operator': page_views_per_session_operator,
             'sessions_per_visitor_operator': sessions_per_visitor_operator,
             'engagement_sessions_per_visitor_operator': engagement_sessions_per_visitor_operator,
-            'engagement_exit_link_operator': engagement_exit_link_operator,            'page_page_operator': page_page_operator,
-            'location_ip_address_operator': location_ip_address_operator
+            'engagement_exit_link_operator': engagement_exit_link_operator
         }
         
         # Remove None values
@@ -744,20 +711,6 @@ def get_entry_pages(
 
         # Apply custom filters
         query = apply_filters_to_query(query, filters, db)
-        
-        # Apply page-specific filtering if page_page filter is provided
-        if page_page:
-            print(f"🔍 Applying page_page filter to entry pages: {page_page}")
-            # For entry pages, we filter on the entry_page field
-            query = query.having(func.split_part(models.Visit.entry_page, '?', 1).ilike(f"%{page_page}%"))
-            print(f"    ✅ Applied page_page filter to entry pages")
-
-        # Apply page_entry_page filtering if provided
-        if page_entry_page:
-            print(f"🔍 Applying page_entry_page filter to entry pages: {page_entry_page}")
-            # For entry pages, we filter on the entry_page field
-            query = query.having(func.split_part(models.Visit.entry_page, '?', 1).ilike(f"%{page_entry_page}%"))
-            print(f"    ✅ Applied page_entry_page filter to entry pages")
 
         # Apply pagination
         entry_pages = (
@@ -886,7 +839,6 @@ def get_exit_pages(
     traffic_utm_source: Optional[str] = Query(None),
     language: Optional[str] = Query(None),
     platform_os: Optional[str] = Query(None),
-    system_platform_os: Optional[str] = Query(None),
     session_length_min: Optional[str] = Query(None),
     session_length_max: Optional[str] = Query(None),
     engagement_session_length_min: Optional[str] = Query(None),
@@ -897,9 +849,6 @@ def get_exit_pages(
     engagement_sessions_per_visitor: Optional[str] = Query(None),
     engagement_exit_link: Optional[str] = Query(None),
     traffic_sources: Optional[str] = Query(None),
-    page_page: Optional[str] = Query(None),
-    page_entry_page: Optional[str] = Query(None),
-    location_ip_address: Optional[str] = Query(None),
     # Operator parameters
     country_city_operator: Optional[str] = Query(None),
     browser_operator: Optional[str] = Query(None),
@@ -911,17 +860,14 @@ def get_exit_pages(
     traffic_utm_source_operator: Optional[str] = Query(None),
     language_operator: Optional[str] = Query(None),
     platform_os_operator: Optional[str] = Query(None),
-    system_platform_os_operator: Optional[str] = Query(None),
     session_length_operator: Optional[str] = Query(None),
     engagement_session_length_operator: Optional[str] = Query(None),
     page_views_operator: Optional[str] = Query(None),
     page_views_per_session_operator: Optional[str] = Query(None),
     sessions_per_visitor_operator: Optional[str] = Query(None),
     engagement_sessions_per_visitor_operator: Optional[str] = Query(None),
-    engagement_exit_link_operator: Optional[str] = Query(None),
-    page_page_operator: Optional[str] = Query(None),
-    location_ip_address_operator: Optional[str] = Query(None),
- ):
+    engagement_exit_link_operator: Optional[str] = Query(None)
+):
     """Simplified exit pages - get last page view from each session"""
     try:
         print(f"🔍 Getting exit pages for project {project_id}")
@@ -939,7 +885,6 @@ def get_exit_pages(
             'traffic_utm_source': traffic_utm_source,
             'language': language,
             'platform_os': platform_os,
-            'system_platform_os': system_platform_os,
             'session_length_min': session_length_min,
             'session_length_max': session_length_max,
             'engagement_session_length_min': engagement_session_length_min,
@@ -949,9 +894,7 @@ def get_exit_pages(
             'sessions_per_visitor': sessions_per_visitor,
             'engagement_sessions_per_visitor': engagement_sessions_per_visitor,
             'engagement_exit_link': engagement_exit_link,
-            'traffic_sources': traffic_sources,            'page_page': page_page,
-            'page_entry_page': page_entry_page,
-            'location_ip_address': location_ip_address,
+            'traffic_sources': traffic_sources,
             'country_city_operator': country_city_operator,
             'browser_operator': browser_operator,
             'device_operator': device_operator,
@@ -962,15 +905,13 @@ def get_exit_pages(
             'traffic_utm_source_operator': traffic_utm_source_operator,
             'language_operator': language_operator,
             'platform_os_operator': platform_os_operator,
-            'system_platform_os_operator': system_platform_os_operator,
             'session_length_operator': session_length_operator,
             'engagement_session_length_operator': engagement_session_length_operator,
             'page_views_operator': page_views_operator,
             'page_views_per_session_operator': page_views_per_session_operator,
             'sessions_per_visitor_operator': sessions_per_visitor_operator,
             'engagement_sessions_per_visitor_operator': engagement_sessions_per_visitor_operator,
-            'engagement_exit_link_operator': engagement_exit_link_operator,            'page_page_operator': page_page_operator,
-            'location_ip_address_operator': location_ip_address_operator
+            'engagement_exit_link_operator': engagement_exit_link_operator
         }
         
         # Remove None values
@@ -1010,15 +951,6 @@ def get_exit_pages(
         exit_page_counts = {}
         for visit_id, last_view in visit_last_pages.items():
             base_url = last_view.url.split('?')[0] if last_view.url else 'Unknown'
-            
-            # Apply page_page filter if provided
-            if page_page and page_page.lower() not in base_url.lower():
-                continue  # Skip this page if it doesn't match the filter
-            
-            # Apply page_entry_page filter if provided
-            if page_entry_page and page_entry_page.lower() not in base_url.lower():
-                continue  # Skip this page if it doesn't match the filter
-                
             exit_page_counts[base_url] = exit_page_counts.get(base_url, 0) + 1
         
         # Convert to result format

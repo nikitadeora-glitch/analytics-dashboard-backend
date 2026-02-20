@@ -33,6 +33,9 @@ cities = ["San Francisco", "Mumbai", "London", "Toronto", "Munich"]
 devices = ["Desktop", "Mobile", "Tablet"]
 browsers = ["Chrome", "Firefox", "Safari", "Edge"]
 referrers = ["google.com", "facebook.com", "twitter.com", "direct", "instagram.com"]
+utm_sources = ["instagram", "facebook", "google", "twitter", None, "email", "referral"]
+utm_mediums = ["social", "organic", "cpc", "email", None, "referral"]
+utm_campaigns = ["summer_sale", "new_launch", "newsletter", None, "promo_2026"]
 
 print("\nCreating sample visits...")
 for i in range(50):
@@ -54,7 +57,11 @@ for i in range(50):
         exit_page=f"/page-{random.randint(1, 5)}",
         session_duration=random.randint(30, 600),
         visited_at=datetime.utcnow() - timedelta(days=random.randint(0, 30)),
-        is_unique=random.choice([True, False])
+        is_unique=random.choice([True, False]),
+        # Add UTM fields
+        utm_source=random.choice(utm_sources),
+        utm_medium=random.choice(utm_mediums),
+        utm_campaign=random.choice(utm_campaigns)
     )
     db.add(visit)
 
