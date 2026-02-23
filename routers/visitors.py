@@ -847,7 +847,13 @@ def get_visitor_activity_view(
 
                 "page_views_list": page_views_list,
 
-                "total_sessions": total_sessions
+                "total_sessions": total_sessions,
+
+                "utm_source": v.utm_source,
+
+                "utm_medium": v.utm_medium,
+
+                "utm_campaign": v.utm_campaign
 
             })
 
@@ -1425,6 +1431,9 @@ def get_map_view(
     page_entry_page: Optional[str] = None,
     location_ip_address: Optional[str] = None,
     engagement_exit_link: Optional[str] = None,
+    utm_campaign: Optional[str] = None,
+    utm_source: Optional[str] = None,
+    utm_medium: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     """
@@ -1447,6 +1456,9 @@ def get_map_view(
     print(f"  - page_entry_page: {page_entry_page}")
     print(f"  - location_ip_address: {location_ip_address}")
     print(f"  - engagement_exit_link: {engagement_exit_link}")
+    print(f"  - utm_campaign: {utm_campaign}")
+    print(f"  - utm_source: {utm_source}")
+    print(f"  - utm_medium: {utm_medium}")
 
     start_date_ist = utils.get_ist_start_of_day(days - 1)
     start_date_utc = utils.ist_to_utc(start_date_ist)
@@ -1576,6 +1588,21 @@ def get_map_view(
         # Filter visits to only include those with matching exit link clicks
         query = query.filter(models.Visit.visitor_id.in_(exit_link_subquery))
         print(f" Applied engagement_exit_link filter: {engagement_exit_link}")
+
+    # Apply UTM campaign filter
+    if utm_campaign:
+        query = query.filter(models.Visit.utm_campaign == utm_campaign)
+        print(f" Applied utm_campaign filter: {utm_campaign}")
+
+    # Apply UTM source filter
+    if utm_source:
+        query = query.filter(models.Visit.utm_source == utm_source)
+        print(f" Applied utm_source filter: {utm_source}")
+
+    # Apply UTM medium filter
+    if utm_medium:
+        query = query.filter(models.Visit.utm_medium == utm_medium)
+        print(f" Applied utm_medium filter: {utm_medium}")
 
     locations = query.group_by(
         models.Visit.country,
@@ -2246,3 +2273,103 @@ def get_bulk_visitor_sessions(project_id: int, visitor_ids: list[str], db: Sessi
     
 
     return result
+
+@router.get("/{project_id}/utm-sources")
+def get_utm_sources(project_id: int, db: Session = Depends(get_db)):
+    """Get all unique UTM sources for a project"""
+    try:
+        print(f"🔍 Getting UTM sources for project {project_id}")
+        
+        # Check if project exists
+        project = db.query(models.Project).filter(models.Project.id == project_id).first()
+        if not project:
+            print(f"❌ Project {project_id} not found")
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        print(f"✅ Project {project_id} found: {project.name}")
+        
+        # Get unique UTM sources
+        utm_sources_query = db.query(models.Visit.utm_source).filter(
+            models.Visit.project_id == project_id,
+            models.Visit.utm_source.isnot(None),
+            models.Visit.utm_source != ''
+        ).distinct()
+        
+        print(f"📊 SQL Query: {utm_sources_query}")
+        
+        utm_sources = utm_sources_query.all()
+        
+        print(f"📋 Raw UTM sources result: {utm_sources}")
+        
+        # Extract values and sort
+        sources = [source[0] for source in utm_sources if source[0]]
+        sources.sort()
+        
+        print(f"✨ Final UTM sources: {sources}")
+        
+        return {"utm_sources": sources}
+        
+    except Exception as e:
+        print(f"❌ Error getting UTM sources: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/{project_id}/utm-mediums")
+def get_utm_mediums(project_id: int, db: Session = Depends(get_db)):
+    """Get all unique UTM mediums for a project"""
+    try:
+        # Check if project exists
+        project = db.query(models.Project).filter(models.Project.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        # Get unique UTM mediums
+        utm_mediums = db.query(models.Visit.utm_medium).filter(
+            models.Visit.project_id == project_id,
+            models.Visit.utm_medium.isnot(None),
+            models.Visit.utm_medium != ''
+        ).distinct().all()
+        
+        # Extract values and sort
+        mediums = [medium[0] for medium in utm_mediums if medium[0]]
+        mediums.sort()
+        
+        return {"utm_mediums": mediums}
+        
+    except Exception as e:
+        print(f"❌ Error getting UTM mediums: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.get("/{project_id}/utm-campaigns")
+def get_utm_campaigns(project_id: int, db: Session = Depends(get_db)):
+    """Get all unique UTM campaigns for a project"""
+    try:
+        print(f"🔍 Getting UTM campaigns for project {project_id}")
+        
+        # Check if project exists
+        project = db.query(models.Project).filter(models.Project.id == project_id).first()
+        if not project:
+            print(f"❌ Project {project_id} not found")
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        print(f"✅ Project {project_id} found: {project.name}")
+        
+        # Get unique UTM campaigns
+        utm_campaigns = db.query(models.Visit.utm_campaign).filter(
+            models.Visit.project_id == project_id,
+            models.Visit.utm_campaign.isnot(None),
+            models.Visit.utm_campaign != ''
+        ).distinct().all()
+        
+        print(f"📊 Raw UTM campaigns result: {utm_campaigns}")
+        
+        # Extract values and sort
+        campaigns = [campaign[0] for campaign in utm_campaigns if campaign[0]]
+        campaigns.sort()
+        
+        print(f"✨ Final UTM campaigns for project {project_id}: {campaigns}")
+        
+        return {"utm_campaigns": campaigns}
+        
+    except Exception as e:
+        print(f"❌ Error getting UTM campaigns: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")

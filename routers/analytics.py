@@ -1398,6 +1398,9 @@ def track_visit(project_id: int, visit: schemas.VisitCreate, request: Request, d
         local_time=visit.local_time,
         local_time_formatted=visit.local_time_formatted,
         timezone_offset=visit.timezone_offset,
+        utm_source=visit.utm_source,
+        utm_medium=visit.utm_medium,
+        utm_campaign=visit.utm_campaign,
         **location_data
     )
     

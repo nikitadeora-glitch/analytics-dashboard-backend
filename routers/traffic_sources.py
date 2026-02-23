@@ -150,6 +150,7 @@ FILTER_MAP = {
     "traffic_sources": "referrer",
     "traffic_utm_campaign": "utm_campaign",
     "traffic_utm_source": "utm_source",
+    "traffic_utm_medium": "utm_medium",
     "page": "page",
     "page_page": "page",
     "entry_page": "entry_page",
@@ -392,6 +393,18 @@ def get_traffic_sources(
 
     page_views_per_session_operator: Optional[str] = None,
 
+    utm_source: Optional[str] = None,
+
+    utm_medium: Optional[str] = None,
+
+    utm_campaign: Optional[str] = None,
+
+    traffic_utm_source: Optional[str] = None,
+
+    traffic_utm_medium: Optional[str] = None,
+
+    traffic_utm_campaign: Optional[str] = None,
+
     db: Session = Depends(get_db)
 
     ):
@@ -478,8 +491,6 @@ def get_traffic_sources(
 
             )
 
-
-
         # Apply custom filters using the unified filter function
         filter_params = {
             'country_city': country_city,
@@ -491,7 +502,13 @@ def get_traffic_sources(
             'engagement_sessions_per_visitor': engagement_sessions_per_visitor,
             'engagement_sessions_per_visitor_operator': engagement_sessions_per_visitor_operator,
             'page_views_per_session': page_views_per_session,
-            'page_views_per_session_operator': page_views_per_session_operator
+            'page_views_per_session_operator': page_views_per_session_operator,
+            'utm_source': utm_source,
+            'utm_medium': utm_medium,
+            'utm_campaign': utm_campaign,
+            'traffic_utm_source': traffic_utm_source,
+            'traffic_utm_medium': traffic_utm_medium,
+            'traffic_utm_campaign': traffic_utm_campaign
         }
         
         # Remove None values
@@ -716,6 +733,18 @@ def get_traffic_source_detail(
 
     page_views_per_session_operator: Optional[str] = None,
 
+    utm_source: Optional[str] = None,
+
+    utm_medium: Optional[str] = None,
+
+    utm_campaign: Optional[str] = None,
+
+    traffic_utm_source: Optional[str] = None,
+
+    traffic_utm_medium: Optional[str] = None,
+
+    traffic_utm_campaign: Optional[str] = None,
+
     db: Session = Depends(get_db)
 
 ):
@@ -800,7 +829,13 @@ def get_traffic_source_detail(
             'engagement_sessions_per_visitor': engagement_sessions_per_visitor,
             'engagement_sessions_per_visitor_operator': engagement_sessions_per_visitor_operator,
             'page_views_per_session': page_views_per_session,
-            'page_views_per_session_operator': page_views_per_session_operator
+            'page_views_per_session_operator': page_views_per_session_operator,
+            'utm_source': utm_source,
+            'utm_medium': utm_medium,
+            'utm_campaign': utm_campaign,
+            'traffic_utm_source': traffic_utm_source,
+            'traffic_utm_medium': traffic_utm_medium,
+            'traffic_utm_campaign': traffic_utm_campaign
         }
         
         # Remove None values
