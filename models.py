@@ -120,15 +120,9 @@ class User(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
-
-
     updated_at = Column(
 
-
-
         DateTime,
-
-
 
         default=datetime.utcnow,
 
@@ -137,15 +131,7 @@ class User(Base):
         onupdate=datetime.utcnow
 
 
-
     )
-
-
-
-
-
-
-
     projects = relationship("Project", back_populates="user")
 
 
