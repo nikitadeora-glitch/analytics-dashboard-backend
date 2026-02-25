@@ -2,7 +2,15 @@ from fastapi import FastAPI
 
 
 
+
+
+
+
 from fastapi.middleware.cors import CORSMiddleware
+
+
+
+
 
 
 
@@ -10,7 +18,15 @@ from fastapi.responses import FileResponse
 
 
 
+
+
+
+
 from starlette.middleware.base import BaseHTTPMiddleware
+
+
+
+
 
 
 
@@ -18,7 +34,15 @@ from starlette.requests import Request
 
 
 
+
+
+
+
 from starlette.responses import Response
+
+
+
+
 
 
 
@@ -30,7 +54,19 @@ from sqlalchemy.orm import Session
 
 
 
+
+
+
+
+
+
+
+
 from database import engine, get_db, Base
+
+
+
+
 
 
 
@@ -38,7 +74,15 @@ from routers import projects, analytics, visitors, pages, traffic_sources, repor
 
 
 
+
+
+
+
 import models
+
+
+
+
 
 
 
@@ -46,11 +90,23 @@ import os
 
 
 
+
+
+
+
 from logging_config import *
 
 
 
+
+
+
+
 logger = logging.getLogger("app")
+
+
+
+
 
 
 
@@ -66,7 +122,23 @@ Base.metadata.create_all(bind=engine)
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 class CustomCORSMiddleware(BaseHTTPMiddleware):
+
+
+
+
 
 
 
@@ -74,11 +146,23 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
         origin = request.headers.get("origin")
 
 
 
+
+
+
+
         
+
+
+
+
 
 
 
@@ -86,11 +170,23 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
         frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 
 
+
+
+
+
         
+
+
+
+
 
 
 
@@ -98,7 +194,15 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
         allowed_origins = [
+
+
+
+
 
 
 
@@ -106,7 +210,15 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
             "http://localhost:3000",
+
+
+
+
 
 
 
@@ -114,7 +226,15 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
             "http://localhost:3001",  # Vite dev server alternate port
+
+
+
+
 
 
 
@@ -122,7 +242,15 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
             "http://localhost:5173",  # Vite dev server
+
+
+
+
 
 
 
@@ -130,7 +258,15 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
             # Production domains
+
+
+
+
 
 
 
@@ -138,11 +274,23 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
             "https://www.seo.prpwebs.com",
 
 
 
+
+
+
+
             "https://api.seo.prpwebs.com",
+
+
+
+
 
 
 
@@ -150,7 +298,15 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
             frontend_url,
+
+
+
+
 
 
 
@@ -158,7 +314,15 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
             "https://api.seo.prpwebs.com",
+
+
+
+
 
 
 
@@ -166,7 +330,15 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
         
+
+
+
+
 
 
 
@@ -174,11 +346,23 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
         allowed_origins = list(set(filter(None, allowed_origins)))
 
 
 
+
+
+
+
         
+
+
+
+
 
 
 
@@ -186,7 +370,15 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
         if request.method == "OPTIONS":
+
+
+
+
 
 
 
@@ -194,7 +386,15 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
             # Only allow specific origins when credentials are involved
+
+
+
+
 
 
 
@@ -202,7 +402,15 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
                 response.headers["Access-Control-Allow-Origin"] = origin
+
+
+
+
 
 
 
@@ -210,7 +418,15 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
             elif origin:
+
+
+
+
 
 
 
@@ -218,11 +434,23 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
                 response.headers["Access-Control-Allow-Origin"] = origin
 
 
 
+
+
+
+
                 response.headers["Access-Control-Allow-Credentials"] = "false"
+
+
+
+
 
 
 
@@ -230,7 +458,15 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
                 # No origin header, fallback to first allowed origin
+
+
+
+
 
 
 
@@ -238,7 +474,15 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
                 response.headers["Access-Control-Allow-Credentials"] = "false"
+
+
+
+
 
 
 
@@ -246,7 +490,15 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
             response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+
+
+
+
 
 
 
@@ -254,7 +506,15 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
             response.headers["Access-Control-Max-Age"] = "86400"
+
+
+
+
 
 
 
@@ -262,7 +522,15 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
         
+
+
+
+
 
 
 
@@ -270,7 +538,15 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
         
+
+
+
+
 
 
 
@@ -278,11 +554,23 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
         if origin and origin in allowed_origins:
 
 
 
+
+
+
+
             response.headers["Access-Control-Allow-Origin"] = origin
+
+
+
+
 
 
 
@@ -290,7 +578,15 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
         elif origin:
+
+
+
+
 
 
 
@@ -298,11 +594,23 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
             response.headers["Access-Control-Allow-Origin"] = origin
 
 
 
+
+
+
+
             response.headers["Access-Control-Allow-Credentials"] = "false"
+
+
+
+
 
 
 
@@ -310,7 +618,15 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
             # No origin header, fallback to first allowed origin
+
+
+
+
 
 
 
@@ -318,7 +634,15 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
             response.headers["Access-Control-Allow-Credentials"] = "false"
+
+
+
+
 
 
 
@@ -326,7 +650,15 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+
+
+
+
 
 
 
@@ -334,11 +666,31 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
         
 
 
 
+
+
+
+
         return response
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -358,7 +710,19 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
+
+
+
+
 # ---------------------------------------------------
+
+
+
+
 
 
 
@@ -366,7 +730,15 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
 # ---------------------------------------------------
+
+
+
+
 
 
 
@@ -378,7 +750,19 @@ app = FastAPI(title="State Counter Analytics API")
 
 
 
+
+
+
+
+
+
+
+
 # Add Custom CORS middleware
+
+
+
+
 
 
 
@@ -394,7 +778,23 @@ app.add_middleware(CustomCORSMiddleware)
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
+
+
+
+
 
 
 
@@ -402,11 +802,23 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
         import time
 
 
 
+
+
+
+
         
+
+
+
+
 
 
 
@@ -414,11 +826,23 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
         start_time = time.time()
 
 
 
+
+
+
+
         
+
+
+
+
 
 
 
@@ -426,7 +850,15 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
         logger.info(f"📥 {request.method} {request.url.path}")
+
+
+
+
 
 
 
@@ -434,7 +866,15 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
         # Process request
+
+
+
+
 
 
 
@@ -442,11 +882,23 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
             response = await call_next(request)
 
 
 
+
+
+
+
             
+
+
+
+
 
 
 
@@ -454,11 +906,23 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
             process_time = time.time() - start_time
 
 
 
+
+
+
+
             
+
+
+
+
 
 
 
@@ -466,7 +930,15 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
             status_emoji = "✅" if response.status_code < 400 else "❌"
+
+
+
+
 
 
 
@@ -474,7 +946,15 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
                 f"{status_emoji} {request.method} {request.url.path} "
+
+
+
+
 
 
 
@@ -482,11 +962,23 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
             )
 
 
 
+
+
+
+
             
+
+
+
+
 
 
 
@@ -494,11 +986,23 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
             response.headers["X-Process-Time"] = str(process_time)
 
 
 
+
+
+
+
             
+
+
+
+
 
 
 
@@ -506,7 +1010,15 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
             
+
+
+
+
 
 
 
@@ -514,7 +1026,15 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
             # Calculate response time
+
+
+
+
 
 
 
@@ -522,7 +1042,15 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
             
+
+
+
+
 
 
 
@@ -530,7 +1058,15 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
             logger.error(
+
+
+
+
 
 
 
@@ -538,7 +1074,15 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
                 f"→ ERROR ({process_time:.3f}s): {str(e)}",
+
+
+
+
 
 
 
@@ -546,7 +1090,15 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
             )
+
+
+
+
 
 
 
@@ -558,7 +1110,19 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 
+
+
+
+
+
+
+
+
 # Add request logging middleware
+
+
+
+
 
 
 
@@ -570,7 +1134,19 @@ app.add_middleware(RequestLoggingMiddleware)
 
 
 
+
+
+
+
+
+
+
+
 # ---------------------------------------------------
+
+
+
+
 
 
 
@@ -578,7 +1154,15 @@ app.add_middleware(RequestLoggingMiddleware)
 
 
 
+
+
+
+
 # ---------------------------------------------------
+
+
+
+
 
 
 
@@ -586,7 +1170,15 @@ app.include_router(auth.router, prefix="/api", tags=["Authentication"])
 
 
 
+
+
+
+
 app.include_router(projects.router, prefix="/api/projects", tags=["Projects"])
+
+
+
+
 
 
 
@@ -594,7 +1186,15 @@ app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"]
 
 
 
+
+
+
+
 app.include_router(visitors.router, prefix="/api/visitors", tags=["Visitors"])
+
+
+
+
 
 
 
@@ -602,7 +1202,15 @@ app.include_router(pages.router, prefix="/api/pages", tags=["Pages"])
 
 
 
+
+
+
+
 app.include_router(traffic_sources.router, prefix="/api/traffic", tags=["Traffic Sources"])
+
+
+
+
 
 
 
@@ -610,7 +1218,15 @@ app.include_router(reports.router, prefix="/api/reports", tags=["Reports"])
 
 
 
+
+
+
+
 app.include_router(leads.router, prefix="/api/lead", tags=["Leads"])
+
+
+
+
 
 
 
@@ -622,7 +1238,19 @@ app.include_router(chathistory.router, prefix="/api/chathistory", tags=["Chat Hi
 
 
 
+
+
+
+
+
+
+
+
 # ---------------------------------------------------
+
+
+
+
 
 
 
@@ -630,7 +1258,15 @@ app.include_router(chathistory.router, prefix="/api/chathistory", tags=["Chat Hi
 
 
 
+
+
+
+
 # ---------------------------------------------------
+
+
+
+
 
 
 
@@ -638,7 +1274,15 @@ app.include_router(chathistory.router, prefix="/api/chathistory", tags=["Chat Hi
 
 
 
+
+
+
+
 def root():
+
+
+
+
 
 
 
@@ -646,7 +1290,15 @@ def root():
 
 
 
+
+
+
+
         "message": "State Counter Analytics API", 
+
+
+
+
 
 
 
@@ -654,7 +1306,15 @@ def root():
 
 
 
+
+
+
+
         "version": "1.0.0",
+
+
+
+
 
 
 
@@ -662,7 +1322,15 @@ def root():
 
 
 
+
+
+
+
             "health": "/health",
+
+
+
+
 
 
 
@@ -670,11 +1338,27 @@ def root():
 
 
 
+
+
+
+
         }
 
 
 
+
+
+
+
     }
+
+
+
+
+
+
+
+
 
 
 
@@ -686,7 +1370,15 @@ def root():
 
 
 
+
+
+
+
 def health_check():
+
+
+
+
 
 
 
@@ -694,11 +1386,23 @@ def health_check():
 
 
 
+
+
+
+
     import os
 
 
 
+
+
+
+
     from datetime import datetime
+
+
+
+
 
 
 
@@ -710,7 +1414,19 @@ def health_check():
 
 
 
+
+
+
+
+
+
+
+
     # Check email configuration
+
+
+
+
 
 
 
@@ -718,7 +1434,15 @@ def health_check():
 
 
 
+
+
+
+
         "mail_username": bool(os.getenv("MAIL_USERNAME")),
+
+
+
+
 
 
 
@@ -726,7 +1450,15 @@ def health_check():
 
 
 
+
+
+
+
         "mail_server": os.getenv("MAIL_SERVER", "smtp.gmail.com"),
+
+
+
+
 
 
 
@@ -734,7 +1466,15 @@ def health_check():
 
 
 
+
+
+
+
         "frontend_url": os.getenv("FRONTEND_URL", "http://localhost:3000")
+
+
+
+
 
 
 
@@ -742,7 +1482,15 @@ def health_check():
 
 
 
+
+
+
+
     
+
+
+
+
 
 
 
@@ -750,7 +1498,15 @@ def health_check():
 
 
 
+
+
+
+
         email_config["mail_username"],
+
+
+
+
 
 
 
@@ -758,7 +1514,15 @@ def health_check():
 
 
 
+
+
+
+
     ])
+
+
+
+
 
 
 
@@ -766,7 +1530,15 @@ def health_check():
 
 
 
+
+
+
+
     return {
+
+
+
+
 
 
 
@@ -774,7 +1546,15 @@ def health_check():
 
 
 
+
+
+
+
         "timestamp": datetime.utcnow().isoformat(),
+
+
+
+
 
 
 
@@ -782,7 +1562,15 @@ def health_check():
 
 
 
+
+
+
+
         "email_config": {
+
+
+
+
 
 
 
@@ -790,7 +1578,15 @@ def health_check():
 
 
 
+
+
+
+
             "server": email_config["mail_server"],
+
+
+
+
 
 
 
@@ -798,7 +1594,15 @@ def health_check():
 
 
 
+
+
+
+
             "frontend_url": email_config["frontend_url"]
+
+
+
+
 
 
 
@@ -806,7 +1610,19 @@ def health_check():
 
 
 
+
+
+
+
     }
+
+
+
+
+
+
+
+
 
 
 
@@ -818,7 +1634,15 @@ def health_check():
 
 
 
+
+
+
+
 def debug_email_config():
+
+
+
+
 
 
 
@@ -826,7 +1650,15 @@ def debug_email_config():
 
 
 
+
+
+
+
     import os
+
+
+
+
 
 
 
@@ -834,7 +1666,15 @@ def debug_email_config():
 
 
 
+
+
+
+
     return {
+
+
+
+
 
 
 
@@ -842,7 +1682,15 @@ def debug_email_config():
 
 
 
+
+
+
+
         "mail_username": os.getenv("MAIL_USERNAME"),
+
+
+
+
 
 
 
@@ -850,7 +1698,15 @@ def debug_email_config():
 
 
 
+
+
+
+
         "mail_server": os.getenv("MAIL_SERVER"),
+
+
+
+
 
 
 
@@ -858,11 +1714,23 @@ def debug_email_config():
 
 
 
+
+
+
+
         "frontend_url": os.getenv("FRONTEND_URL"),
 
 
 
+
+
+
+
         "all_mail_env_vars": {k: v for k, v in os.environ.items() if 'MAIL' in k.upper()}
+
+
+
+
 
 
 
@@ -874,7 +1742,19 @@ def debug_email_config():
 
 
 
+
+
+
+
+
+
+
+
 # ---------------------------------------------------
+
+
+
+
 
 
 
@@ -882,7 +1762,15 @@ def debug_email_config():
 
 
 
+
+
+
+
 # ---------------------------------------------------
+
+
+
+
 
 
 
@@ -890,7 +1778,15 @@ def debug_email_config():
 
 
 
+
+
+
+
 def serve_analytics_js():
+
+
+
+
 
 
 
@@ -898,7 +1794,15 @@ def serve_analytics_js():
 
 
 
+
+
+
+
         "analytics.js",
+
+
+
+
 
 
 
@@ -906,7 +1810,15 @@ def serve_analytics_js():
 
 
 
+
+
+
+
         headers={
+
+
+
+
 
 
 
@@ -914,7 +1826,15 @@ def serve_analytics_js():
 
 
 
+
+
+
+
             "Pragma": "no-cache",
+
+
+
+
 
 
 
@@ -922,7 +1842,15 @@ def serve_analytics_js():
 
 
 
+
+
+
+
         },
+
+
+
+
 
 
 
@@ -934,7 +1862,19 @@ def serve_analytics_js():
 
 
 
+
+
+
+
+
+
+
+
 # ---------------------------------------------------
+
+
+
+
 
 
 
@@ -942,7 +1882,15 @@ def serve_analytics_js():
 
 
 
+
+
+
+
 # ---------------------------------------------------
+
+
+
+
 
 
 
@@ -950,7 +1898,15 @@ if __name__ == "__main__":
 
 
 
+
+
+
+
     import uvicorn
+
+
+
+
 
 
 
@@ -958,7 +1914,15 @@ if __name__ == "__main__":
 
 
 
+
+
+
+
         "main:app",
+
+
+
+
 
 
 
@@ -966,7 +1930,15 @@ if __name__ == "__main__":
 
 
 
+
+
+
+
         port=8000,
+
+
+
+
 
 
 
@@ -974,7 +1946,15 @@ if __name__ == "__main__":
 
 
 
+
+
+
+
     )
+
+
+
+
 
 
 

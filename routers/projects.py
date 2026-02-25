@@ -193,11 +193,6 @@ def create_project(
     tracking_code = secrets.token_urlsafe(16)
 
 
-
-
-
-
-
     db_project = models.Project(
 
 
@@ -291,19 +286,9 @@ def get_projects(
 
 
     return db.query(models.Project).filter(
-
-
-
         models.Project.user_id == current_user.id,
-
-
-
         models.Project.is_active == True
-
-
-
-    ).all()
-
+    ).order_by(models.Project.id.asc()).all()
 
 
 
@@ -370,7 +355,7 @@ def get_deleted_projects(
 
 
 
-    ).all()
+    ).order_by(models.Project.id.asc()).all()
 
 
 
@@ -438,7 +423,7 @@ def get_all_projects_stats(
 
 
 
-    ).all()
+    ).order_by(models.Project.id.asc()).all()
 
 
 
@@ -1140,6 +1125,146 @@ def delete_project(
 
 
 
+
+
+# -------------------------------
+
+
+
+# Check Script Installation
+
+
+
+# -------------------------------
+@router.get("/{project_id}/script-status")
+
+
+
+def check_script_installation(
+
+
+
+    project_id: int,
+
+
+
+    db: Session = Depends(get_db),
+
+
+
+    current_user: Optional[models.User] = Depends(get_current_user_optional)
+
+
+
+):
+
+
+
+    project = db.query(models.Project).filter(models.Project.id == project_id).first()
+
+
+
+    if not project:
+
+
+
+        raise HTTPException(status_code=404, detail="Project not found")
+
+
+
+
+
+
+
+    if current_user and project.user_id and project.user_id != current_user.id:
+
+
+
+        raise HTTPException(status_code=403, detail="Access denied")
+
+
+
+        
+        # Check if project has any visits (indicates script is installed)
+    has_visits = db.query(models.Visit).filter(models.Visit.project_id == project_id).first() is not None
+    
+    # Get first visit date if available
+    first_visit = None
+    total_visits = 0
+    
+    if has_visits:
+        first_visit_data = db.query(models.Visit).filter(
+            models.Visit.project_id == project_id
+        ).order_by(models.Visit.visited_at.asc()).first()
+        
+        if first_visit_data:
+            first_visit = first_visit_data.visited_at
+        
+        total_visits = db.query(models.Visit).filter(models.Visit.project_id == project_id).count()
+    
+    # Generate tracking script
+    script_url = f"http://127.0.0.1:8000/api/analytics.js"
+    api_url = "http://127.0.0.1:8000/api"
+    
+    tracking_script = f'''<!-- State Counter Analytics Tracking Code -->
+<script src="{script_url}" data-project-id="{project_id}" data-api-url="{api_url}"></script>'''
+    
+    # Generate installation instructions
+    installation_instructions = {
+        "step1": "Copy the tracking code above",
+        "step2": "Paste it before the closing </head> tag on your website",
+        "step3": "Save and refresh your website",
+        "note": "It may take a few minutes for data to appear after installation"
+    }
+    
+    return {
+        "project_id": project_id,
+        "script_installed": has_visits,
+        "first_visit_date": first_visit,
+        "total_visits": total_visits,
+        "tracking_script": tracking_script,
+        "installation_instructions": installation_instructions,
+        "status": "installed" if has_visits else "not_installed"
+    }
+
+
+    # -------------------------------
+
+    # Restore Project
+
+    # -------------------------------
+
+    @router.post("/{project_id}/restore")
+
+    def restore_project(
+
+        project_id: int,
+
+        db: Session = Depends(get_db),
+
+        current_user: Optional[models.User] = Depends(get_current_user_optional)
+
+    ):
+
+        project = db.query(models.Project).filter(models.Project.id == project_id).first()
+
+        if not project:
+
+            raise HTTPException(status_code=404, detail="Project not found")
+
+
+
+        if current_user and project.user_id and project.user_id != current_user.id:
+
+            raise HTTPException(status_code=403, detail="Access denied")
+
+
+
+        project.is_active = True
+
+        db.commit()
+
+        return {"message": "Project restored"}
 
 
 # -------------------------------
