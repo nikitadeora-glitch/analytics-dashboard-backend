@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Optional
 import os
+import sys
 import requests
 import json
 from datetime import datetime, timedelta
@@ -56,8 +57,15 @@ print(f"REDIRECT URI: {SEO_OAUTH_REDIRECT_URI}")
 print(f"FRONTEND URL: {FRONTEND_URL}")
 
 # Check if redirect URI is properly configured
-# Skip validation during testing
-if os.getenv("ENVIRONMENT") != "test":
+# Skip validation during testing or CI/CD
+is_test_environment = (
+    os.getenv("ENVIRONMENT") == "test" or
+    os.getenv("CI") is not None or
+    os.getenv("PYTEST_CURRENT_TEST") is not None or
+    "pytest" in sys.modules
+)
+
+if not is_test_environment:
     if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
         print("❌ ERROR: Google OAuth credentials not configured")
         print("Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in environment variables")
