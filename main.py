@@ -40,13 +40,10 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
             # Production domains
             "https://seo.prpwebs.com",
             "https://www.seo.prpwebs.com",
-            "https://api.seo.prpwebs.com",
+            "https://app.seo.prpwebs.com",  # If frontend is on subdomain
             
             # Environment-specific frontend URL
             frontend_url,
-            
-            # Add your React frontend domain here
-            "https://api.seo.prpwebs.com",
         ]
         
         # Remove duplicates and None values
