@@ -1,7 +1,10 @@
 from database import engine, get_db
-from models import User
+from models import User, Base
 from sqlalchemy.orm import sessionmaker
 import bcrypt
+
+# Create tables if they don't exist
+Base.metadata.create_all(bind=engine)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 db = SessionLocal()

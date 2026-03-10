@@ -56,10 +56,12 @@ print(f"REDIRECT URI: {SEO_OAUTH_REDIRECT_URI}")
 print(f"FRONTEND URL: {FRONTEND_URL}")
 
 # Check if redirect URI is properly configured
-if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
-    print("❌ ERROR: Google OAuth credentials not configured")
-    print("Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in environment variables")
-    raise HTTPException(status_code=500, detail="Google OAuth credentials not configured")
+# Skip validation during testing
+if os.getenv("ENVIRONMENT") != "test":
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        print("❌ ERROR: Google OAuth credentials not configured")
+        print("Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in environment variables")
+        raise HTTPException(status_code=500, detail="Google OAuth credentials not configured")
 
 # Validate redirect URI format
 if not SEO_OAUTH_REDIRECT_URI.startswith(("http://localhost", "https://")):
