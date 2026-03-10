@@ -1302,6 +1302,38 @@ def get_client_ip(request: Request) -> str:
     # Fallback to direct connection IP
     return request.client.host
 
+@router.post("/{project_id}/event/{visit_id}")
+def track_custom_event(project_id: int, visit_id: int, event_data: dict, request: Request, db: Session = Depends(get_db)):
+    """Track custom events (product view, add to cart, etc.)"""
+    
+    if _is_probable_bot_request(request):
+        _log_ignored(request, "event")
+        return {"status": "ignored", "reason": "bot"}
+    
+    # Verify visit exists
+    visit = db.query(models.Visit).filter(
+        models.Visit.id == visit_id,
+        models.Visit.project_id == project_id
+    ).first()
+    
+    if not visit:
+        raise HTTPException(status_code=404, detail="Visit not found")
+    
+    # Create event record
+    event = models.Event(
+        visit_id=visit_id,
+        event_type=event_data.get("event_type"),
+        event_data=event_data.get("event_data"),
+        url=event_data.get("url"),
+        timestamp=datetime.fromtimestamp(event_data.get("timestamp", Date.now()) / 1000, tz=pytz.UTC)
+    )
+    
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+    
+    return {"status": "success", "event_id": event.id}
+
 @router.post("/{project_id}/track")
 def track_visit(project_id: int, visit: schemas.VisitCreate, request: Request, db: Session = Depends(get_db)):
     import requests

@@ -302,8 +302,6 @@ async def forgot_password(
             recipient_email=email,
             notification_title="Password Reset Request",
             notification_message=f"""
-            Hello,
-            
             You requested to reset your password for your Statify account. Click the link below to reset your password:
             
             {reset_link}
@@ -311,9 +309,6 @@ async def forgot_password(
             This link will expire in 15 minutes for security reasons.
             
             If you didn't request this password reset, you can safely ignore this email.
-            
-            Best regards,
-            The Statify Team
             """
         )
         print(f"✅ Password reset email sent successfully to {email}")
