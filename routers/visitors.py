@@ -704,8 +704,11 @@ def get_visitor_activity_view(
 
         page_views_map = {}
 
+        events_map = {}
+
         if visit_ids:
 
+            # Load page views
             page_views = db.query(models.PageView).filter(
 
                 models.PageView.visit_id.in_(visit_ids)
@@ -723,6 +726,18 @@ def get_visitor_activity_view(
                     page_views_map[pv.visit_id] = []
 
                 page_views_map[pv.visit_id].append(pv)
+
+            
+            # Load events for all visits
+            events = db.query(models.Event).filter(
+                models.Event.visit_id.in_(visit_ids)
+            ).order_by(models.Event.timestamp).all()
+            
+            # Group events by visit_id
+            for event in events:
+                if event.visit_id not in events_map:
+                    events_map[event.visit_id] = []
+                events_map[event.visit_id].append(event)
 
         
 
@@ -775,6 +790,8 @@ def get_visitor_activity_view(
 
             page_views_count = len(page_views)
 
+            events = events_map.get(v.id, [])
+
             
 
             # Get session count for this visitor
@@ -796,6 +813,15 @@ def get_visitor_activity_view(
                 "viewed_at": pv.viewed_at
 
             } for pv in page_views]
+
+            
+            # Build events list
+            events_list = [{
+                "event_type": event.event_type,
+                "event_data": event.event_data,
+                "url": event.url,
+                "timestamp": event.timestamp
+            } for event in events]
 
             
 
@@ -846,6 +872,8 @@ def get_visitor_activity_view(
                 "page_views": page_views_count if page_views_count > 0 else 0,
 
                 "page_views_list": page_views_list,
+
+                "events": events_list,
 
                 "total_sessions": total_sessions,
 
