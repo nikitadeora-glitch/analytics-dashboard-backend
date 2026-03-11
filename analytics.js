@@ -1,25 +1,27 @@
 /**
-
-
+/**
 
  * State Counter Analytics - Dynamic Tracking Script
 
+ * 
 
-
+ * Shopify Events Tracked:
+ * add_to_cart - When items are added to cart
+ * remove_from_cart - When items are removed from cart  
+ * cart_view - When user views cart page
+ * checkout_start - When user starts checkout process
+ * wishlist_add - When item is added to wishlist
+ * wishlist_remove - When item is removed from wishlist
+ * product_view - When user views product page
+ * category_view - When user views category/collection page
+ * purchase - When purchase is completed
  * 
  * Usage (Simple):
-
  * <script src="analytics.js" data-project-id="1"></script>
-
  * 
-
  * Usage (Advanced):
-
-
  * <script 
-
  *   src="analytics.js" 
-
  *   data-project-id="1"
 
  *   data-api-url="http://127.0.0.1:8000/api"
@@ -1191,6 +1193,8 @@
   }
 
   function trackExit() {
+     if (window._exitTracked) return;
+  window._exitTracked = true;
     if (!visitId) return;
     // Update last page view time spent
     if (currentPageViewId) {
@@ -1237,45 +1241,54 @@
       });
     }
   }
-  function setupExitLinkTracking() {
-    // Track all external link clicks
-    document.addEventListener('click', (e) => {
-      // Find the closest anchor tag
-      const link = e.target.closest('a');
-      if (!link) return;
-      const href = link.getAttribute('href');
-      if (!href) return;
 
-      // Check if it's an external link
-      const isExternal = (
-        href.startsWith('http://') ||
-        href.startsWith('https://') ||
-        href.startsWith('//')
-      ) && !href.includes(window.location.hostname);
+  function setupExitLinkTracking() {
+
+  document.addEventListener('click', (e) => {
+
+    const link = e.target.closest('a');
+    if (!link) return;
+
+    const href = link.getAttribute('href');
+    if (!href) return;
+
+    try {
+
+      const linkHost = new URL(href, window.location.href).hostname;
+      const isExternal = linkHost !== window.location.hostname;
+
       if (isExternal) {
         trackExitLink(href);
         log('🔗 External link clicked:', href);
       }
-    }, true); // Use capture phase to catch all clicks
-  }
 
+    } catch (err) {
+      // Ignore invalid URLs
+    }
+
+  }, true);
+
+}
 
   // ============================================
   // SINGLE PAGE APPLICATION (SPA) NAVIGATION TRACKING
   // ============================================
   function trackPageNavigation() {
-    const currentUrl = window.location.href;
-    const currentTitle = document.title;
-    // Check if URL actually changed (avoid duplicate tracking)
-    if (currentUrl === currentPage) {
-      return;
-    }
-    log('🔄 Page navigation detected:', currentUrl);
-    // Track new page view
-    trackPageView(currentUrl, currentTitle);
-    // Update current page
-    currentPage = currentUrl;
-  }
+
+  const currentUrl = window.location.href;
+
+  if (currentUrl === currentPage) return;
+
+  trackPageView(currentUrl, document.title);
+
+  detectProductPage();
+  detectCartPage();
+  detectCheckout();
+  detectCategoryPage();
+
+  currentPage = currentUrl;
+
+}
   // ============================================
   // INITIALIZE
   // ============================================
@@ -1371,18 +1384,38 @@
 
   // Shopify Product Page Detection
   function detectProductPage() {
-    if (window.location.pathname.includes('/products/')) {
-      const productHandle = window.location.pathname.split('/products/')[1];
-      trackEvent('product_view', {
-        product_handle: productHandle,
-        product_url: window.location.href,
-        title: document.title
-      });
+    if (window._lastTrackedProduct === window.location.pathname) return;
+  window._lastTrackedProduct = window.location.pathname;
+
+  if (window.location.pathname.includes('/products/')) {
+
+    let productData = {};
+
+    if (window.ShopifyAnalytics && window.ShopifyAnalytics.meta && window.ShopifyAnalytics.meta.product) {
+      const p = window.ShopifyAnalytics.meta.product;
+
+      productData = {
+        product_id: p.id,
+        product_title: p.title,
+        product_vendor: p.vendor,
+        product_type: p.type
+      };
     }
+
+    trackEvent('product_view', {
+      ...productData,
+      product_url: window.location.href,
+      title: document.title
+    });
+
   }
 
-  // Shopify Add to Cart Detection (Advanced)
+}
+
+  // Shopify Cart Tracking (Add + Remove) - Advanced
   function setupAddToCartTracking() {
+     if (window._statifyFetchIntercepted) return;
+  window._statifyFetchIntercepted = true;
     // Method 1: Intercept fetch requests (most reliable)
     const originalFetch = window.fetch;
     window.fetch = function(...args) {
@@ -1391,25 +1424,53 @@
       return originalFetch.apply(this, args).then(response => {
         // Check if this is an add to cart request
         if (url && typeof url === 'string' && url.includes('/cart/add')) {
-          try {
-            // Clone the response to read it
-            response.clone().json().then(cartData => {
-              trackEvent('add_to_cart', {
-                product_id: cartData.id,
-                product_title: cartData.title,
-                quantity: cartData.quantity || 1,
-                price: cartData.price,
-                variant_id: cartData.variant_id
-              });
-            }).catch(() => {
-              // Fallback if JSON parsing fails
-              trackEvent('add_to_cart', {
-                url: url,
-                timestamp: Date.now()
-              });
+
+  response.clone().json().then(cartData => {
+
+    trackEvent('add_to_cart', {
+      product_id: cartData.product_id || cartData.id,
+      variant_id: cartData.variant_id,
+      product_title: cartData.title,
+      quantity: cartData.quantity || 1,
+      price: cartData.price
+    });
+
+  }).catch(() => {
+
+    trackEvent('add_to_cart', {
+      source: 'cart_add_request',
+      url: url
+    });
+
+  });
+
+}
+        // Check if this is a cart update/remove request
+        if (url && typeof url === 'string' && (url.includes('/cart/change') || url.includes('/cart/update'))) {
+
+  trackEvent('cart_updated', {
+    source: 'cart_update_request',
+    url: url,
+    timestamp: Date.now()
+  });
+
+}
+        // Check if this is a wishlist API request
+        if (url && typeof url === 'string' && url.includes('/wishlist')) {
+          const method = options?.method || 'GET';
+          
+          if (method === 'POST' || method === 'PUT') {
+            trackEvent('wishlist_add', {
+              url: url,
+              method: method,
+              timestamp: Date.now()
             });
-          } catch (e) {
-            log('Error parsing cart response:', e);
+          } else if (method === 'DELETE') {
+            trackEvent('wishlist_remove', {
+              url: url,
+              method: method,
+              timestamp: Date.now()
+            });
           }
         }
         
@@ -1435,25 +1496,7 @@
       }
     });
 
-    // Method 3: Click detection (additional backup)
-    document.addEventListener('click', function(e) {
-      const target = e.target.closest('button[type="submit"], input[type="submit"], .add-to-cart, [action*="/cart/add"]');
-      if (target) {
-        const form = target.closest('form[action*="/cart/add"]');
-        if (form) {
-          log('🛒 Add to cart click detected');
-          
-          const variantId = form.querySelector('[name="id"]')?.value;
-          const quantity = form.querySelector('[name="quantity"]')?.value || '1';
-          
-          trackEvent('add_to_cart_click', {
-            variant_id: variantId,
-            quantity: quantity,
-            button_text: target.textContent?.trim()
-          });
-        }
-      }
-    });
+    
   }
 
   // Shopify Cart Page Detection
@@ -1488,20 +1531,114 @@
 
   // Shopify Checkout Detection
   function detectCheckout() {
-    if (window.location.pathname.includes('/checkout')) {
+    if (
+  window.location.pathname.includes('/checkout') ||
+  window.location.hostname.includes('checkout')
+){
       trackEvent('checkout_start', {
         url: window.location.href,
         step: 'checkout_start'
       });
     }
 
-    if (window.location.pathname.includes('/thank_you') || window.location.pathname.includes('/thank-you')) {
-      trackEvent('purchase', {
-        url: window.location.href,
-        step: 'purchase_complete'
-      });
-    }
+    if (
+  window.location.pathname.includes('thank_you') ||
+  window.location.pathname.includes('thank-you') ||
+  window.location.pathname.includes('/orders/')
+) {
+
+  if (!sessionStorage.getItem('statify_purchase')) {
+
+    sessionStorage.setItem('statify_purchase', '1');
+
+    trackEvent('purchase', {
+      url: window.location.href,
+      step: 'purchase_complete'
+    });
+
   }
+
+}
+  }
+
+  // Shopify Remove from Cart Detection
+  function setupRemoveFromCartTracking() {
+    // Method 1: Intercept fetch requests for cart updates
+    // Note: This will be merged with the global fetch interceptor in setupAddToCartTracking
+
+    // Method 2: Click detection for remove buttons
+    document.addEventListener('click', function(e) {
+      const target = e.target.closest('[href*="/cart/change"], .cart__remove, .remove-item, [data-remove-item]');
+      if (target) {
+        log('🗑️ Remove from cart click detected');
+        
+        // Try to get product info from the cart item
+        const cartItem = target.closest('.cart__item, .cart-item, [data-cart-item]');
+        const productId = cartItem?.getAttribute('data-product-id') || 
+                          cartItem?.querySelector('[data-product-id]')?.getAttribute('data-product-id');
+        const productTitle = cartItem?.querySelector('.cart__product-title, .product-title')?.textContent?.trim();
+        
+        trackEvent('remove_from_cart_click', {
+          product_id: productId,
+          product_title: productTitle,
+          button_text: target.textContent?.trim()
+        });
+      }
+    });
+  }
+
+  // Shopify Wishlist Detection
+  function setupWishlistTracking() {
+    // Method 1: Click detection for wishlist buttons
+    document.addEventListener('click', function(e) {
+      const target = e.target.closest('.wishlist-button, [data-wishlist], .add-to-wishlist, .wishlist-add');
+      if (target) {
+        const isInWishlist = target.classList.contains('in-wishlist') || 
+                            target.getAttribute('data-in-wishlist') === 'true';
+        
+        // Try to get product info
+        const productContainer = target.closest('.product, .product-item, [data-product-id]');
+        const productId = productContainer?.getAttribute('data-product-id') || 
+                         target.getAttribute('data-product-id');
+        const productTitle = productContainer?.querySelector('.product-title, .product-name')?.textContent?.trim();
+        const productUrl = productContainer?.querySelector('a[href*="/products/"]')?.href;
+        
+        if (isInWishlist) {
+          trackEvent('wishlist_remove', {
+            product_id: productId,
+            product_title: productTitle,
+            product_url: productUrl,
+            button_text: target.textContent?.trim()
+          });
+        } else {
+          trackEvent('wishlist_add', {
+            product_id: productId,
+            product_title: productTitle,
+            product_url: productUrl,
+            button_text: target.textContent?.trim()
+          });
+        }
+      }
+    });
+  }
+
+  // Shopify Category/Collection Detection
+  function detectCategoryPage() {
+
+  if (window.location.pathname.includes('/collections/')) {
+
+    const parts = window.location.pathname.split('/collections/');
+    const categoryHandle = parts[1] ? parts[1].split('/')[0] : null;
+
+    trackEvent('category_view', {
+      category_handle: categoryHandle,
+      category_url: window.location.href,
+      title: document.title
+    });
+
+  }
+
+}
 
   // Initialize all Shopify tracking
   function initShopifyTracking() {
@@ -1511,31 +1648,18 @@
     detectProductPage();
     detectCartPage();
     detectCheckout();
+    detectCategoryPage();
     
-    // Setup add to cart tracking
+    // Setup event tracking
     setupAddToCartTracking();
+    setupRemoveFromCartTracking(); 
+    setupWishlistTracking();
+    setupExitLinkTracking();
+
     
-    // Track page changes for SPAs
-    const originalPushState = history.pushState;
-    const originalReplaceState = history.replaceState;
     
-    history.pushState = function() {
-      originalPushState.apply(this, arguments);
-      setTimeout(() => {
-        detectProductPage();
-        detectCartPage();
-        detectCheckout();
-      }, 100);
-    };
     
-    history.replaceState = function() {
-      originalReplaceState.apply(this, arguments);
-      setTimeout(() => {
-        detectProductPage();
-        detectCartPage();
-        detectCheckout();
-      }, 100);
-    };
+    
   }
 
   // ============================================
