@@ -10,6 +10,7 @@ import utils
 from utils import get_ist_start_of_day
 import re
 import pytz
+import time
 
 router = APIRouter()
 security = HTTPBearer(auto_error=False)  # Make authentication optional
@@ -1325,7 +1326,10 @@ def track_custom_event(project_id: int, visit_id: int, event_data: dict, request
         event_type=event_data.get("event_type"),
         event_data=event_data.get("event_data"),
         url=event_data.get("url"),
-        timestamp=datetime.fromtimestamp(event_data.get("timestamp", Date.now()) / 1000, tz=pytz.UTC)
+        timestamp = datetime.fromtimestamp(
+    event_data.get("timestamp", int(time.time() * 1000)) / 1000,
+    tz=pytz.UTC
+)
     )
     
     db.add(event)
