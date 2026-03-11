@@ -623,27 +623,27 @@ def get_visitor_activity_view(
                 if sessions_per_visitor_operator == 'equals':
                     # Subquery for session count per visitor
                     subquery = db.query(models.Visit.visitor_id,
-                                     func.count(models.Visit.id).label('session_count'))\
-                                 .filter(models.Visit.project_id == project_id)\
-                                 .group_by(models.Visit.visitor_id)\
+                                     func.count(models.Visit.id).label('session_count')) \
+                                 .filter(models.Visit.project_id == project_id) \
+                                 .group_by(models.Visit.visitor_id) \
                                  .subquery()
-                    query = query.join(subquery, models.Visit.visitor_id == subquery.c.visitor_id)\
+                    query = query.join(subquery, models.Visit.visitor_id == subquery.c.visitor_id) \
                              .filter(subquery.c.session_count == sessions_count)
                 elif sessions_per_visitor_operator == 'greater_than':
                     subquery = db.query(models.Visit.visitor_id,
-                                     func.count(models.Visit.id).label('session_count'))\
-                                 .filter(models.Visit.project_id == project_id)\
-                                 .group_by(models.Visit.visitor_id)\
+                                     func.count(models.Visit.id).label('session_count')) \
+                                 .filter(models.Visit.project_id == project_id) \
+                                 .group_by(models.Visit.visitor_id) \
                                  .subquery()
-                    query = query.join(subquery, models.Visit.visitor_id == subquery.c.visitor_id)\
+                    query = query.join(subquery, models.Visit.visitor_id == subquery.c.visitor_id) \
                              .filter(subquery.c.session_count > sessions_count)
                 elif sessions_per_visitor_operator == 'less_than':
                     subquery = db.query(models.Visit.visitor_id,
-                                     func.count(models.Visit.id).label('session_count'))\
-                                 .filter(models.Visit.project_id == project_id)\
-                                 .group_by(models.Visit.visitor_id)\
+                                     func.count(models.Visit.id).label('session_count')) \
+                                 .filter(models.Visit.project_id == project_id) \
+                                 .group_by(models.Visit.visitor_id) \
                                  .subquery()
-                    query = query.join(subquery, models.Visit.visitor_id == subquery.c.visitor_id)\
+                    query = query.join(subquery, models.Visit.visitor_id == subquery.c.visitor_id) \
                              .filter(subquery.c.session_count < sessions_count)
                 print(f"🔍 Applied sessions per visitor filter: {sessions_per_visitor_operator} {sessions_count}")
             except ValueError:
@@ -656,27 +656,27 @@ def get_visitor_activity_view(
                 if engagement_sessions_per_visitor_operator == 'equals':
                     # Subquery for session count per visitor
                     subquery = db.query(models.Visit.visitor_id,
-                                     func.count(models.Visit.id).label('session_count'))\
-                                 .filter(models.Visit.project_id == project_id)\
-                                 .group_by(models.Visit.visitor_id)\
+                                     func.count(models.Visit.id).label('session_count')) \
+                                 .filter(models.Visit.project_id == project_id) \
+                                 .group_by(models.Visit.visitor_id) \
                                  .subquery()
-                    query = query.join(subquery, models.Visit.visitor_id == subquery.c.visitor_id)\
+                    query = query.join(subquery, models.Visit.visitor_id == subquery.c.visitor_id) \
                              .filter(subquery.c.session_count == sessions_count)
                 elif engagement_sessions_per_visitor_operator == 'greater_than':
                     subquery = db.query(models.Visit.visitor_id,
-                                     func.count(models.Visit.id).label('session_count'))\
-                                 .filter(models.Visit.project_id == project_id)\
-                                 .group_by(models.Visit.visitor_id)\
+                                     func.count(models.Visit.id).label('session_count')) \
+                                 .filter(models.Visit.project_id == project_id) \
+                                 .group_by(models.Visit.visitor_id) \
                                  .subquery()
-                    query = query.join(subquery, models.Visit.visitor_id == subquery.c.visitor_id)\
+                    query = query.join(subquery, models.Visit.visitor_id == subquery.c.visitor_id) \
                              .filter(subquery.c.session_count > sessions_count)
                 elif engagement_sessions_per_visitor_operator == 'less_than':
                     subquery = db.query(models.Visit.visitor_id,
-                                     func.count(models.Visit.id).label('session_count'))\
-                                 .filter(models.Visit.project_id == project_id)\
-                                 .group_by(models.Visit.visitor_id)\
+                                     func.count(models.Visit.id).label('session_count')) \
+                                 .filter(models.Visit.project_id == project_id) \
+                                 .group_by(models.Visit.visitor_id) \
                                  .subquery()
-                    query = query.join(subquery, models.Visit.visitor_id == subquery.c.visitor_id)\
+                    query = query.join(subquery, models.Visit.visitor_id == subquery.c.visitor_id) \
                              .filter(subquery.c.session_count < sessions_count)
                 print(f"🔍 Applied engagement sessions per visitor filter: {engagement_sessions_per_visitor_operator} {sessions_count}")
             except ValueError:
