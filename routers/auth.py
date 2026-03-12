@@ -23,7 +23,7 @@ security = HTTPBearer()
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-here")
 ALGORITHM = "HS256"
 # Token expiration times (in minutes for access token, days for refresh token)
-ACCESS_TOKEN_EXPIRE_MINUTES = 1440  # 24 hours (24 * 60 = 1440 minutes)
+ACCESS_TOKEN_EXPIRE_MINUTES = 4320  # 72 hours (3 days)
 REFRESH_TOKEN_EXPIRE_DAYS = 30     # 30 days
 
 
