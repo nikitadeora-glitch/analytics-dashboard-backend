@@ -74,8 +74,7 @@
   // 1. Prefer explicit data-api-url attribute
 
 
-  // 2. If not set, derive from the script's own source URL (e.g. if loaded from http://api.com/script.js, use http://api.com/api/)
-
+  // 2. If not set, derive from the script source URL
   // 3. Fallback to localhost for dev
 
   let defaultUrl;
@@ -1285,6 +1284,10 @@
   detectCartPage();
   detectCheckout();
   detectCategoryPage();
+  
+  // Run checkout detection methods on navigation
+  setupCheckoutRedirectDetection();
+  setupPurchaseDetection();
 
   currentPage = currentUrl;
 
@@ -1529,36 +1532,17 @@
     }
   }
 
-  // Shopify Checkout Detection
+  // Shopify Checkout Detection (Legacy - kept for compatibility)
   function detectCheckout() {
     if (
   window.location.pathname.includes('/checkout') ||
   window.location.hostname.includes('checkout')
 ){
-      trackEvent('checkout_start', {
+      trackEvent('checkout_page_view', {
         url: window.location.href,
-        step: 'checkout_start'
+        step: 'checkout_page_loaded'
       });
     }
-
-    if (
-  window.location.pathname.includes('thank_you') ||
-  window.location.pathname.includes('thank-you') ||
-  window.location.pathname.includes('/orders/')
-) {
-
-  if (!sessionStorage.getItem('statify_purchase')) {
-
-    sessionStorage.setItem('statify_purchase', '1');
-
-    trackEvent('purchase', {
-      url: window.location.href,
-      step: 'purchase_complete'
-    });
-
-  }
-
-}
   }
 
   // Shopify Remove from Cart Detection
@@ -1622,26 +1606,73 @@
     });
   }
 
-   // Shopify Checkout Button Click Tracking
+  // Shopify Checkout Button Click Tracking (Method 1 - Cart Page)
 function setupCheckoutClickTracking() {
 
-  document.addEventListener("click", function(e) {
+  document.addEventListener("click", function(e){
 
     const btn = e.target.closest(
-      'button[name="checkout"], input[name="checkout"], a[href*="/checkout"], .cart__checkout-button, button[type="submit"]'
+      'button[name="checkout"], input[name="checkout"], a[href*="/checkout"], .cart__checkout-button'
     );
 
     if (!btn) return;
+    
+    // Prevent duplicate tracking
+    if (btn._checkoutClicked) return;
+    btn._checkoutClicked = true;
+    setTimeout(() => btn._checkoutClicked = false, 1000);
 
-    trackEvent("checkout_click", {
-      button_text: btn.innerText || btn.value || "checkout",
-      page_url: window.location.href
+    // Stop event bubbling to prevent duplicate triggers
+    e.stopPropagation();
+
+    Analytics.trackEvent("checkout_click", {
+      source: "cart_page",
+      page_url: window.location.href,
+      button_text: btn.innerText || btn.value || "checkout"
     });
 
-    console.log("Checkout click tracked");
+    console.log("Checkout click tracked - Method 1: Cart Page");
 
-  });
+  }, true); // Use capture phase
 
+}
+
+// Method 2: Checkout Redirect Detection
+function setupCheckoutRedirectDetection() {
+  // Check if we're on checkout page (redirected from cart)
+  if (window.location.pathname.includes("/checkout")) {
+    // Only track if we came from cart (check referrer)
+    const referrer = document.referrer;
+    if (referrer && (referrer.includes('/cart') || referrer.includes('avpayurveda.com'))) {
+      Analytics.trackEvent("checkout_start", {
+        source: "checkout_redirect",
+        page_url: window.location.href,
+        referrer: referrer
+      });
+      console.log("Checkout start tracked - Method 2: Redirect Detection");
+    }
+  }
+}
+
+// Method 3: Purchase Detection on Thank You Page
+function setupPurchaseDetection() {
+  if (
+    window.location.pathname.includes("thank_you") ||
+    window.location.pathname.includes("thank-you") ||
+    window.location.pathname.includes("/orders/")
+  ) {
+    // Prevent duplicate tracking
+    if (!sessionStorage.getItem('statify_purchase_tracked')) {
+      sessionStorage.setItem('statify_purchase_tracked', '1');
+      
+      Analytics.trackEvent("purchase", {
+        source: "thank_you_page",
+        page_url: window.location.href,
+        timestamp: Date.now()
+      });
+      console.log("Purchase tracked - Method 3: Thank You Page");
+    }
+  }
 }
 
 
@@ -1678,6 +1709,8 @@ function setupCheckoutClickTracking() {
     setupRemoveFromCartTracking(); 
     setupWishlistTracking();
     setupCheckoutClickTracking();
+    setupCheckoutRedirectDetection();
+    setupPurchaseDetection();
     setupExitLinkTracking();
    
 
