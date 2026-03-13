@@ -1194,9 +1194,31 @@ def get_exit_pages(
             # Calculate bounce rate
             bounce_rate = (single_page_visits / total_exit_visits * 100) if total_exit_visits > 0 else 0.0
                 
-            print(f"📊 Exit Page Bounce Rate for {base_url}: {single_page_visits}/{total_exit_visits} = {bounce_rate:.1f}%")
+            # Calculate proper exit rate and bounce rate
+            # Get total visits for this project in the date range
+            total_project_visits_query = db.query(models.Visit).filter(
+                models.Visit.project_id == project_id
+            )
+            
+            if start_dt:
+                total_project_visits_query = total_project_visits_query.filter(models.Visit.visited_at >= start_dt)
+            if end_dt:
+                total_project_visits_query = total_project_visits_query.filter(models.Visit.visited_at <= end_dt)
+            
+            # Apply filters to get total visits
+            total_project_visits_query = apply_filters_to_query(total_project_visits_query, filters, db)
+            total_project_visits = total_project_visits_query.count()
+            
+            # Calculate exit rate: (exits from this page / total project visits) * 100
+            exit_rate = (count / total_project_visits * 100) if total_project_visits > 0 else 0.0
+            
+            print(f"📊 Exit Page Stats for {base_url}:")
+            print(f"  Exits: {count}")
+            print(f"  Total Project Visits: {total_project_visits}")
+            print(f"  Exit Rate: {exit_rate:.1f}%")
+            print(f"  Bounce Rate: {bounce_rate:.1f}%")
                 
-            # Get actual visits for this exit page
+            # Get actual visits for this exit page - get ALL visits for accurate session count
             visits_for_page = []
             page_visits = db.query(models.Visit).join(models.PageView).filter(
                 models.Visit.project_id == project_id,
@@ -1211,7 +1233,10 @@ def get_exit_pages(
             # Apply filters to get the actual visits that exited on this page
             page_visits = apply_filters_to_query(page_visits, filters, db)
             
-            # Get visits data
+            # Get total visits count for this page (for accurate session display)
+            total_page_visits = page_visits.count()
+            
+            # Get visits data (limited for performance, but we have accurate count)
             visits_data = page_visits.order_by(desc(models.Visit.visited_at)).limit(100).all()
             
             for visit in visits_data:
@@ -1234,9 +1259,10 @@ def get_exit_pages(
                 "exits": count,
                 "unique_visitors": len(set(v.visitor_id for v in visit_last_pages.values() 
                                         if v.url and v.url.split('?')[0] == base_url)),
-                "exit_rate": 100.0,  # Simplified
+                "exit_rate": round(exit_rate, 1),  # Proper exit rate calculation
                 "bounce_rate": round(bounce_rate, 1),  # Proper bounce rate calculation
-                "total_page_views": count,
+                "total_page_views": total_page_visits,  # Use accurate total count
+                "total_sessions": total_page_visits,  # Add total sessions for frontend
                 "visits": visits_for_page  # Add actual visits data
             })
         
