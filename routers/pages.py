@@ -1135,6 +1135,33 @@ def get_exit_pages(
             if len(result) >= limit:
                 break
                 
+            # Calculate bounce rate for exit pages
+            # Get all visits that ended on this exit page
+            exit_visit_ids = []
+            for visit_id, last_view in visit_last_pages.items():
+                if last_view.url and last_view.url.split('?')[0] == base_url:
+                    exit_visit_ids.append(visit_id)
+            
+            # Calculate bounce rate - count visits with single page view
+            single_page_visits = 0
+            total_exit_visits = len(exit_visit_ids)
+            
+            if total_exit_visits > 0:
+                # Check page view count for each exit visit
+                visit_page_counts = db.query(
+                    models.PageView.visit_id,
+                    func.count(models.PageView.id).label('page_count')
+                ).filter(
+                    models.PageView.visit_id.in_(exit_visit_ids)
+                ).group_by(models.PageView.visit_id).all()
+                
+                single_page_visits = sum(1 for visit_id, page_count in visit_page_counts if page_count == 1)
+                
+            # Calculate bounce rate
+            bounce_rate = (single_page_visits / total_exit_visits * 100) if total_exit_visits > 0 else 0.0
+                
+            print(f"📊 Exit Page Bounce Rate for {base_url}: {single_page_visits}/{total_exit_visits} = {bounce_rate:.1f}%")
+                
             # Get actual visits for this exit page
             visits_for_page = []
             page_visits = db.query(models.Visit).join(models.PageView).filter(
@@ -1174,7 +1201,7 @@ def get_exit_pages(
                 "unique_visitors": len(set(v.visitor_id for v in visit_last_pages.values() 
                                         if v.url and v.url.split('?')[0] == base_url)),
                 "exit_rate": 100.0,  # Simplified
-                "bounce_rate": 0.0,   # Simplified
+                "bounce_rate": round(bounce_rate, 1),  # Proper bounce rate calculation
                 "total_page_views": count,
                 "visits": visits_for_page  # Add actual visits data
             })
