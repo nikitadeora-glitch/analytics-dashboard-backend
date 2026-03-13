@@ -678,21 +678,10 @@ def get_most_visited_pages(
                 
             print(f"📊 Top Page Bounce Rate for {base_url}: {single_page_visits}/{total_page_visits} = {bounce_rate:.1f}%")
             
-            # Get actual visits for this page - similar to entry/exit pages
+            # Get visits data (limited for performance, but we have accurate count)
+            visits_data = page_visits_query.order_by(desc(models.Visit.visited_at)).limit(100).all()
+            
             visits_for_page = []
-            page_visits = db.query(models.Visit).join(models.PageView).filter(
-                models.Visit.project_id == project_id,
-                func.split_part(models.PageView.url, '?', 1) == base_url
-            )
-            
-            if start_dt:
-                page_visits = page_visits.filter(models.Visit.visited_at >= start_dt)
-            if end_dt:
-                page_visits = page_visits.filter(models.Visit.visited_at <= end_dt)
-            
-            # Get ALL visits for this page (no limit - show complete data)
-            visits_data = page_visits.order_by(desc(models.Visit.visited_at)).all()
-            
             for visit in visits_data:
                 visits_for_page.append({
                     "session_id": visit.session_id,  # This is the session string ID
@@ -710,10 +699,12 @@ def get_most_visited_pages(
             result.append({
                 "url": base_url,
                 "title": title or base_url,
-                "total_views": total_views,
+                "total_views": total_page_visits,  # Use actual visits count instead of aggregated views
                 "unique_sessions": unique_sessions,
                 "avg_time_spent": float(avg_time_spent) if avg_time_spent else 0.0,
                 "bounce_rate": bounce_rate,
+                "total_page_views": total_page_visits,  # Use accurate total count
+                "total_sessions": total_page_visits,  # Add total sessions for frontend
                 "visits": visits_for_page  # Add visits data like entry/exit pages
             })
 
