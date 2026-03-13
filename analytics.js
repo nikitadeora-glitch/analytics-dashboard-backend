@@ -1622,6 +1622,29 @@
     });
   }
 
+   // Shopify Checkout Button Click Tracking
+function setupCheckoutClickTracking() {
+
+  document.addEventListener("click", function(e) {
+
+    const btn = e.target.closest(
+      'button[name="checkout"], input[name="checkout"], a[href*="/checkout"], .cart__checkout-button, button[type="submit"]'
+    );
+
+    if (!btn) return;
+
+    trackEvent("checkout_click", {
+      button_text: btn.innerText || btn.value || "checkout",
+      page_url: window.location.href
+    });
+
+    console.log("Checkout click tracked");
+
+  });
+
+}
+
+
   // Shopify Category/Collection Detection
   function detectCategoryPage() {
 
@@ -1654,7 +1677,9 @@
     setupAddToCartTracking();
     setupRemoveFromCartTracking(); 
     setupWishlistTracking();
+    setupCheckoutClickTracking();
     setupExitLinkTracking();
+   
 
     
     
