@@ -660,9 +660,9 @@ def get_most_visited_pages(
             
             # Calculate bounce rate - count visits with single page view
             single_page_visits = 0
-            total_page_visits = len(page_visit_ids)
+            total_filtered_visits = len(page_visit_ids)
             
-            if total_page_visits > 0:
+            if total_filtered_visits > 0:
                 # Check page view count for each page visit
                 visit_page_counts = db.query(
                     models.PageView.visit_id,
@@ -673,10 +673,11 @@ def get_most_visited_pages(
                 
                 single_page_visits = sum(1 for visit_id, page_count in visit_page_counts if page_count == 1)
                 
-            # Calculate bounce rate
-            bounce_rate = (single_page_visits / total_page_visits * 100) if total_page_visits > 0 else 0.0
+            # Calculate bounce rate based on filtered visits
+            bounce_rate = (single_page_visits / total_filtered_visits * 100) if total_filtered_visits > 0 else 0.0
                 
-            print(f"📊 Top Page Bounce Rate for {base_url}: {single_page_visits}/{total_page_visits} = {bounce_rate:.1f}%")
+            print(f"📊 Top Page Bounce Rate for {base_url}: {single_page_visits}/{total_filtered_visits} = {bounce_rate:.1f}%")
+            print(f"📊 Top Page Views: {total_views} (aggregated), Filtered Visits: {total_filtered_visits}")
             
             # Get visits data (limited for performance, but we have accurate count)
             visits_data = page_visits_query.order_by(desc(models.Visit.visited_at)).limit(100).all()
@@ -699,12 +700,12 @@ def get_most_visited_pages(
             result.append({
                 "url": base_url,
                 "title": title or base_url,
-                "total_views": total_page_visits,  # Use actual visits count instead of aggregated views
+                "total_views": total_views,  # Keep original aggregated views for display
                 "unique_sessions": unique_sessions,
                 "avg_time_spent": float(avg_time_spent) if avg_time_spent else 0.0,
                 "bounce_rate": bounce_rate,
-                "total_page_views": total_page_visits,  # Use accurate total count
-                "total_sessions": total_page_visits,  # Add total sessions for frontend
+                "total_page_views": total_filtered_visits,  # Use filtered visits count for sessions
+                "total_sessions": total_filtered_visits,  # Add total sessions for frontend
                 "visits": visits_for_page  # Add visits data like entry/exit pages
             })
 
