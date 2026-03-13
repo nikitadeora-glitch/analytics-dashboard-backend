@@ -641,8 +641,42 @@ def get_most_visited_pages(
 
         result = []
         for base_url, total_views, unique_sessions, avg_time_spent, title in page_stats:
-            # Simplified bounce rate - use reasonable defaults
-            bounce_rate = 35.0 if total_views > 1 else 0.0
+            # Calculate proper bounce rate for top pages
+            # Get all visits for this page
+            page_visits_query = db.query(models.Visit).join(models.PageView).filter(
+                models.Visit.project_id == project_id,
+                func.split_part(models.PageView.url, '?', 1) == base_url
+            )
+            
+            if start_dt:
+                page_visits_query = page_visits_query.filter(models.Visit.visited_at >= start_dt)
+            if end_dt:
+                page_visits_query = page_visits_query.filter(models.Visit.visited_at <= end_dt)
+            
+            # Apply filters to get the actual visits for this page
+            page_visits_query = apply_filters_to_query(page_visits_query, filters, db)
+            
+            page_visit_ids = [visit.id for visit in page_visits_query.all()]
+            
+            # Calculate bounce rate - count visits with single page view
+            single_page_visits = 0
+            total_page_visits = len(page_visit_ids)
+            
+            if total_page_visits > 0:
+                # Check page view count for each page visit
+                visit_page_counts = db.query(
+                    models.PageView.visit_id,
+                    func.count(models.PageView.id).label('page_count')
+                ).filter(
+                    models.PageView.visit_id.in_(page_visit_ids)
+                ).group_by(models.PageView.visit_id).all()
+                
+                single_page_visits = sum(1 for visit_id, page_count in visit_page_counts if page_count == 1)
+                
+            # Calculate bounce rate
+            bounce_rate = (single_page_visits / total_page_visits * 100) if total_page_visits > 0 else 0.0
+                
+            print(f"📊 Top Page Bounce Rate for {base_url}: {single_page_visits}/{total_page_visits} = {bounce_rate:.1f}%")
             
             # Get actual visits for this page - similar to entry/exit pages
             visits_for_page = []
