@@ -731,9 +731,10 @@ def get_traffic_sources(
         # -----------------------------
 
         result = []
-
-        total_visits = len(visits)
-
+        
+        # Store total visits from all sources for percentage calculation
+        total_visits_all_sources = len(visits)
+        
         source_names = {
 
             "direct": "Direct Traffic",
@@ -801,7 +802,7 @@ def get_traffic_sources(
 
                     "count": data["count"],
 
-                    "percentage": round((data["count"] / total_visits) * 100, 2) if total_visits > 0 else 0,
+                    "percentage": round((data["count"] / total_visits_all_sources) * 100, 2) if total_visits_all_sources > 0 else 0,
 
                     "bounce_rate": bounce_rate
 
