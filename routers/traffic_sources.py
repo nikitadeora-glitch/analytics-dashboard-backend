@@ -139,7 +139,7 @@ FILTER_MAP = {
 
     "browser": "browser", 
 
-    "device": "device_type",
+    "device": "device",
 
     "utm_source": "utm_source",
 
@@ -177,9 +177,13 @@ FILTER_MAP = {
 
     "page_page": "page",
 
+    "landing_page": "entry_page",
+
     "entry_page": "entry_page",
 
-    "location_ip_address": "ip_address"
+    "location_ip_address": "ip_address",
+
+    "visitor_visitor_type": "visitor_type"
 
 }
 
@@ -493,6 +497,124 @@ def classify_source(referrer: str) -> str:
 
     return "referral"
 
+@router.get("/{project_id}/landing-pages")
+def get_landing_pages(
+    project_id: int,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Get all unique landing pages for the project within date range
+    """
+    try:
+        print(f"🔍 Getting landing pages for project {project_id}")
+        
+        # Parse dates using same normalization
+        start_dt = None
+        end_dt = None
+        
+        if start_date and end_date:
+            try:
+                start_dt, end_dt = normalize_date_range(start_date, end_date)
+                print(f"🌐 Date filtering: {start_dt} to {end_dt}")
+            except ValueError as e:
+                print(f"❌ Date parsing error: {e}")
+        
+        # Query unique entry pages
+        query = db.query(models.Visit.entry_page).filter(
+            models.Visit.project_id == project_id,
+            models.Visit.entry_page.isnot(None),
+            models.Visit.entry_page != ''
+        )
+        
+        # Apply date filtering if specified
+        if start_dt and end_dt:
+            query = query.filter(
+                models.Visit.visited_at >= start_dt,
+                models.Visit.visited_at <= end_dt
+            )
+        
+        # Get unique landing pages with visit counts
+        landing_pages_data = query.with_entities(
+            models.Visit.entry_page,
+            func.count(models.Visit.id).label('visit_count')
+        ).group_by(models.Visit.entry_page).order_by(desc('visit_count')).all()
+        
+        # Format response
+        landing_pages = []
+        for page_data in landing_pages_data:
+            landing_pages.append({
+                'page': page_data.entry_page,
+                'visit_count': page_data.visit_count
+            })
+        
+        print(f"✅ Found {len(landing_pages)} unique landing pages")
+        return landing_pages
+        
+    except Exception as e:
+        print(f"❌ Error getting landing pages: {e}")
+        return []
+
+@router.get("/{project_id}/utm-campaigns")
+def get_utm_campaigns(
+    project_id: int,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Get all unique UTM campaigns for the project within date range
+    """
+    try:
+        print(f"🔍 Getting UTM campaigns for project {project_id}")
+        
+        # Parse dates using same normalization
+        start_dt = None
+        end_dt = None
+        
+        if start_date and end_date:
+            try:
+                start_dt, end_dt = normalize_date_range(start_date, end_date)
+                print(f"🌐 Date filtering: {start_dt} to {end_dt}")
+            except ValueError as e:
+                print(f"❌ Date parsing error: {e}")
+        
+        # Query unique UTM campaigns
+        query = db.query(models.Visit.utm_campaign).filter(
+            models.Visit.project_id == project_id,
+            models.Visit.utm_campaign.isnot(None),
+            models.Visit.utm_campaign != ''
+        )
+        
+        # Apply date filtering if specified
+        if start_dt and end_dt:
+            query = query.filter(
+                models.Visit.visited_at >= start_dt,
+                models.Visit.visited_at <= end_dt
+            )
+        
+        # Get unique UTM campaigns with visit counts
+        utm_campaigns_data = query.with_entities(
+            models.Visit.utm_campaign,
+            func.count(models.Visit.id).label('visit_count')
+        ).group_by(models.Visit.utm_campaign).order_by(desc('visit_count')).all()
+        
+        # Format response
+        utm_campaigns = []
+        for campaign_data in utm_campaigns_data:
+            utm_campaigns.append({
+                'campaign': campaign_data.utm_campaign,
+                'visit_count': campaign_data.visit_count
+            })
+        
+        print(f"✅ Found {len(utm_campaigns)} unique UTM campaigns")
+        return utm_campaigns
+        
+    except Exception as e:
+        print(f"❌ Error getting UTM campaigns: {e}")
+        return []
+
 @router.get("/{project_id}/sources")
 
 def get_traffic_sources(
@@ -537,6 +659,12 @@ def get_traffic_sources(
 
     traffic_utm_campaign: Optional[str] = None,
 
+    device: Optional[str] = None,
+
+    entry_page: Optional[str] = None,
+
+    visitor_visitor_type: Optional[str] = None,
+
     db: Session = Depends(get_db)
 
     ):
@@ -572,6 +700,12 @@ def get_traffic_sources(
         if system_platform_os:
 
             print(f"💻 OS filter: {system_platform_os}")
+
+
+
+        if visitor_visitor_type:
+
+            print(f"👥 Visitor Type filter: {visitor_visitor_type}")
 
         # -----------------------------
 
@@ -624,8 +758,92 @@ def get_traffic_sources(
 
             )
 
-        # Apply custom filters using the unified filter function
+        # Apply traffic_sources filter BEFORE categorization if specified
+        if traffic_sources:
+            print(f"🎯 Applying traffic_sources filter to visits query: {traffic_sources}")
+            # Filter visits by referrer pattern that matches the requested source type
+            if traffic_sources == 'direct':
+                visits_query = visits_query.filter(
+                    models.Visit.referrer.in_([None, '', 'direct', 'null', 'undefined'])
+                )
+            elif traffic_sources == 'organic':
+                visits_query = visits_query.filter(
+                    models.Visit.referrer.ilike('%google%') |
+                    models.Visit.referrer.ilike('%bing%') |
+                    models.Visit.referrer.ilike('%yahoo%') |
+                    models.Visit.referrer.ilike('%duckduckgo%') |
+                    models.Visit.referrer.ilike('%baidu%')
+                )
+            elif traffic_sources == 'social':
+                visits_query = visits_query.filter(
+                    models.Visit.referrer.ilike('%facebook%') |
+                    models.Visit.referrer.ilike('%twitter%') |
+                    models.Visit.referrer.ilike('%instagram%') |
+                    models.Visit.referrer.ilike('%linkedin%') |
+                    models.Visit.referrer.ilike('%youtube%') |
+                    models.Visit.referrer.ilike('%tiktok%') |
+                    models.Visit.referrer.ilike('%pinterest%')
+                )
+            elif traffic_sources == 'ai':
+                visits_query = visits_query.filter(
+                    models.Visit.referrer.ilike('%chatgpt%') |
+                    models.Visit.referrer.ilike('%claude%') |
+                    models.Visit.referrer.ilike('%gemini%') |
+                    models.Visit.referrer.ilike('%copilot%') |
+                    models.Visit.referrer.ilike('%perplexity%')
+                )
+            elif traffic_sources == 'email':
+                visits_query = visits_query.filter(
+                    models.Visit.referrer.ilike('%mail%') |
+                    models.Visit.referrer.ilike('%gmail%') |
+                    models.Visit.referrer.ilike('%outlook%') |
+                    models.Visit.referrer.ilike('%yahoo.com%')
+                )
+            elif traffic_sources == 'paid':
+                visits_query = visits_query.filter(
+                    models.Visit.referrer.ilike('%ads%') |
+                    models.Visit.referrer.ilike('%adwords%') |
+                    models.Visit.referrer.ilike('%facebook.com/tr%')
+                )
+            elif traffic_sources == 'utm':
+                visits_query = visits_query.filter(
+                    models.Visit.referrer.ilike('%utm_%') |
+                    models.Visit.referrer.ilike('%campaign%')
+                )
+            elif traffic_sources == 'referral':
+                # For referral, exclude all other specific types
+                visits_query = visits_query.filter(
+                    models.Visit.referrer.notin_([None, '', 'direct', 'null', 'undefined']),
+                    ~models.Visit.referrer.ilike('%google%'),
+                    ~models.Visit.referrer.ilike('%bing%'),
+                    ~models.Visit.referrer.ilike('%yahoo%'),
+                    ~models.Visit.referrer.ilike('%duckduckgo%'),
+                    ~models.Visit.referrer.ilike('%baidu%'),
+                    ~models.Visit.referrer.ilike('%facebook%'),
+                    ~models.Visit.referrer.ilike('%twitter%'),
+                    ~models.Visit.referrer.ilike('%instagram%'),
+                    ~models.Visit.referrer.ilike('%linkedin%'),
+                    ~models.Visit.referrer.ilike('%youtube%'),
+                    ~models.Visit.referrer.ilike('%tiktok%'),
+                    ~models.Visit.referrer.ilike('%pinterest%'),
+                    ~models.Visit.referrer.ilike('%chatgpt%'),
+                    ~models.Visit.referrer.ilike('%claude%'),
+                    ~models.Visit.referrer.ilike('%gemini%'),
+                    ~models.Visit.referrer.ilike('%copilot%'),
+                    ~models.Visit.referrer.ilike('%perplexity%'),
+                    ~models.Visit.referrer.ilike('%mail%'),
+                    ~models.Visit.referrer.ilike('%gmail%'),
+                    ~models.Visit.referrer.ilike('%outlook%'),
+                    ~models.Visit.referrer.ilike('%yahoo.com%'),
+                    ~models.Visit.referrer.ilike('%ads%'),
+                    ~models.Visit.referrer.ilike('%adwords%'),
+                    ~models.Visit.referrer.ilike('%facebook.com/tr%'),
+                    ~models.Visit.referrer.ilike('%utm_%'),
+                    ~models.Visit.referrer.ilike('%campaign%')
+                )
+            print(f"🎯 Applied traffic_sources filter, visits query updated")
 
+        # Apply custom filters using the unified filter function
         filter_params = {
 
             'country_city': country_city,
@@ -658,12 +876,18 @@ def get_traffic_sources(
 
             'traffic_utm_medium': traffic_utm_medium,
 
-            'traffic_utm_campaign': traffic_utm_campaign
+            'traffic_utm_campaign': traffic_utm_campaign,
+
+            'device': device,
+            
+        
+            'entry_page': entry_page,
+
+            'visitor_visitor_type': visitor_visitor_type
 
         }
 
         # Remove None values
-
         filter_params = {k: v for k, v in filter_params.items() if v is not None}
 
         if filter_params:
@@ -672,7 +896,7 @@ def get_traffic_sources(
 
         visits = visits_query.all()
 
-        print(f"📊 Found {len(visits)} visits in date range with engagement and page views filters")
+        print(f"📊 Found {len(visits)} visits in date range with traffic source and other filters")
 
 
         if not visits:
@@ -757,15 +981,12 @@ def get_traffic_sources(
 
         for source_type, data in source_groups.items():
 
-            # Apply traffic_sources filter if specified
-
-            if traffic_sources and source_type != traffic_sources:
-
-                continue
+            # Note: traffic_sources filter is now applied at query level, so no need to filter here
 
             if data["count"] > 0:  # Only include sources with visits
 
                 # Calculate bounce rate - more realistic logic
+
                 bounced = 0
 
                 for v in data["visits"]:
@@ -786,30 +1007,187 @@ def get_traffic_sources(
 
                     # Only count as definite bounce when we have clear evidence
 
-                # Calculate bounce rate - no hardcoded thresholds
-
-                # Use whatever data is available in the filtered date range
-
                 total_visits = len(data["visits"])
 
                 bounce_rate = round((bounced / total_visits) * 100, 1) if total_visits > 0 else 0
 
+                # Calculate Engagement Rate (100 - bounce_rate)
+
+                engagement_rate = round(100 - bounce_rate, 1) if bounce_rate is not None else 0
+
+                # Calculate Conversions - Multiple conversion tracking methods
+
+                conversions = 0
+
+                conversion_details = {
+                    'cart_actions': 0,
+                    'form_submissions': 0,
+                    'purchase_events': 0,
+                    'signup_events': 0,
+                    'lead_events': 0,
+                    'custom_conversions': 0
+                }
+
+                try:
+
+                    # Get visit IDs for this traffic source
+
+                    visit_ids = [v.id for v in data["visits"]]
+
+                    if visit_ids:
+
+                        # Method 1: Cart actions (add_to_cart, purchase_completed)
+
+                        cart_actions = db.query(models.CartAction).filter(
+                            models.CartAction.visit_id.in_(visit_ids),
+                            models.CartAction.action.in_(['add_to_cart', 'purchase_completed', 'checkout_started'])
+                        ).all()
+
+                        conversion_details['cart_actions'] = len(cart_actions)
+
+                        # Method 2: Custom events (more comprehensive)
+
+                        purchase_events = db.query(models.Event).filter(
+                            models.Event.visit_id.in_(visit_ids),
+                            models.Event.event_type.in_(['purchase', 'order_completed', 'payment_successful'])
+                        ).count()
+
+                        conversion_details['purchase_events'] = purchase_events
+
+                        signup_events = db.query(models.Event).filter(
+                            models.Event.visit_id.in_(visit_ids),
+                            models.Event.event_type.in_(['signup', 'register', 'user_registered'])
+                        ).count()
+
+                        conversion_details['signup_events'] = signup_events
+
+                        lead_events = db.query(models.Event).filter(
+                            models.Event.visit_id.in_(visit_ids),
+                            models.Event.event_type.in_(['lead', 'form_submit', 'contact_submit', 'newsletter_signup'])
+                        ).count()
+
+                        conversion_details['lead_events'] = lead_events
+
+                        # Method 3: Page view based conversions (thank you pages, confirmation pages)
+
+                        conversion_pages = db.query(models.PageView).filter(
+                            models.PageView.visit_id.in_(visit_ids),
+                            models.PageView.url.ilike('%thank%') |
+                            models.PageView.url.ilike('%confirm%') |
+                            models.PageView.url.ilike('%success%') |
+                            models.PageView.url.ilike('%complete%') |
+                            models.PageView.url.ilike('%checkout%')
+                        ).count()
+
+                        conversion_details['custom_conversions'] = conversion_pages
+
+                        # Method 4: Exit link clicks to external conversion sites
+
+                        conversion_link_clicks = db.query(models.ExitLinkClick).filter(
+                            models.ExitLinkClick.visit_id.in_(visit_ids),
+                            models.ExitLinkClick.url.ilike('%payment%') |
+                            models.ExitLinkClick.url.ilike('%checkout%') |
+                            models.ExitLinkClick.url.ilike('%buy%') |
+                            models.ExitLinkClick.url.ilike('%order%')
+                        ).count()
+
+                        conversion_details['link_conversions'] = conversion_link_clicks
+
+                        # Calculate total conversions (unique visits with any conversion activity)
+
+                        all_conversion_activities = (
+                            len(set([ca.visit_id for ca in cart_actions])) +
+                            purchase_events + signup_events + lead_events +
+                            conversion_pages + conversion_link_clicks
+                        )
+
+                        conversions = all_conversion_activities
+
+                        print(f"🎯 Conversion details for {source_type}:")
+                        for conversion_type, count in conversion_details.items():
+                            print(f"   {conversion_type}: {count}")
+                        print(f"   Total conversions: {conversions}")
+
+                except Exception as e:
+                    print(f"⚠️ Error calculating conversions for {source_type}: {e}")
+
+                    conversions = 0
+
+                # Calculate Trend - Compare with previous period
+
+                trend = 0
+
+                trend_direction = "up"
+
+                try:
+
+                    if start_dt and end_dt:
+
+                        # Calculate previous period dates
+
+                        period_days = (end_dt - start_dt).days
+
+                        prev_start_dt = start_dt - timedelta(days=period_days)
+
+                        prev_end_dt = start_dt - timedelta(days=1)
+
+                        # Get previous period visits for this traffic source
+
+                        prev_visits_query = db.query(models.Visit).filter(
+                            models.Visit.project_id == project_id,
+                            models.Visit.visited_at >= prev_start_dt,
+                            models.Visit.visited_at <= prev_end_dt
+                        )
+
+                        # Apply same filters to previous period
+
+                        if filter_params:
+                            prev_visits_query = apply_filters_to_query(prev_visits_query, filter_params, db)
+
+                        prev_visits = prev_visits_query.all()
+
+                        # Categorize previous period visits
+
+                        prev_source_groups = {
+                            "direct": {"count": 0}, "organic": {"count": 0}, "social": {"count": 0},
+                            "referral": {"count": 0}, "email": {"count": 0}, "paid": {"count": 0},
+                            "ai": {"count": 0}, "utm": {"count": 0}
+                        }
+
+                        for prev_visit in prev_visits:
+                            prev_source_type = classify_source(prev_visit.referrer)
+                            prev_source_groups[prev_source_type]["count"] += 1
+
+                        prev_count = prev_source_groups[source_type]["count"]
+                        current_count = data["count"]
+
+                        # Calculate trend percentage
+
+                        if prev_count > 0:
+                            trend = round(((current_count - prev_count) / prev_count) * 100, 1)
+                            trend_direction = "up" if trend >= 0 else "down"
+                        else:
+                            trend = 100.0 if current_count > 0 else 0.0
+                            trend_direction = "up"
+
+                except Exception as e:
+                    print(f"⚠️ Error calculating trend for {source_type}: {e}")
+                    trend = 0
+                    trend_direction = "up"
+
                 result.append({
-
                     "source_type": source_type,
-
                     "source_name": source_names.get(source_type, source_type.title()),
-
                     "count": data["count"],
-
                     "percentage": round((data["count"] / total_visits_all_sources) * 100, 2) if total_visits_all_sources > 0 else 0,
-
-                    "bounce_rate": bounce_rate
-
+                    "bounce_rate": bounce_rate,
+                    "engagement_rate": engagement_rate,
+                    "conversions": conversions,
+                    "trend": trend,
+                    "trend_direction": trend_direction
                 })
 
         # Sort by count descending
-
         result.sort(key=lambda x: x["count"], reverse=True)
 
         print(f"✅ Returning {len(result)} traffic source results")
@@ -967,7 +1345,9 @@ def get_traffic_source_detail(
 
             'traffic_utm_medium': traffic_utm_medium,
 
-            'traffic_utm_campaign': traffic_utm_campaign
+            'traffic_utm_campaign': traffic_utm_campaign,
+
+            'device': device
 
         }
 
