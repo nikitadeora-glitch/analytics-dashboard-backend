@@ -2171,37 +2171,101 @@ def get_exit_links(
             elif operator == 'less_than_or_equal':
 
                 query = query.filter(models.Visit.session_duration <= engagement_session_length)
-
             else:
-
                 # Default to equals
-
                 query = query.filter(models.Visit.session_duration == engagement_session_length)
 
             print(f"🔍 Exit Links - Applied session length filter: {engagement_session_length} ({operator})")
 
     # Get individual clicks ordered by most recent first
-
     exit_clicks = query.order_by(desc(models.ExitLinkClick.clicked_at)).limit(limit).all()
+    
+    # Get exit pages from visits that don't have exit link clicks but have exit_page data
+    exit_pages_query = db.query(models.Visit).filter(
+        models.Visit.project_id == project_id,
+        models.Visit.exit_page.isnot(None),
+        models.Visit.exit_page != ''
+    )
+    
+    # Apply date filtering to exit pages if parameters are provided
+    if start_date and end_date:
+        try:
+            # Parse ISO datetime strings from frontend
+            from datetime import datetime
+            start_datetime = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            end_datetime = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            exit_pages_query = exit_pages_query.filter(
+                models.Visit.visited_at >= start_datetime,
+                models.Visit.visited_at <= end_datetime
+            )
+            print(f"📅 Exit Pages - Filtering by date range: {start_datetime} to {end_datetime}")
+        except ValueError as e:
+            print(f"❌ Exit Pages - Date parsing error: {e}")
+    
+    # Apply the same filters to exit pages query
+    # Note: We'll apply basic filters here, could be expanded based on requirements
+    if country_city:
+        if ',' in country_city:
+            parts = country_city.split(',', 1)
+            country_filter = parts[0].strip()
+            city_filter = parts[1].strip() if len(parts) > 1 else None
+            if city_filter:
+                exit_pages_query = exit_pages_query.filter(
+                    models.Visit.country == country_filter,
+                    models.Visit.city == city_filter
+                )
+            else:
+                exit_pages_query = exit_pages_query.filter(models.Visit.country == country_filter)
+        else:
+            exit_pages_query = exit_pages_query.filter(models.Visit.country == country_city)
+    
+    if browser:
+        exit_pages_query = exit_pages_query.filter(models.Visit.browser.like(f"%{browser}%"))
+    
+    if device:
+        exit_pages_query = exit_pages_query.filter(models.Visit.device.like(f'%{device}%'))
+    
+    if traffic_sources:
+        exit_pages_query = exit_pages_query.filter(models.Visit.referrer.like(f'%{traffic_sources}%'))
+    
+    if entry_page:
+        exit_pages_query = exit_pages_query.filter(models.Visit.entry_page.like(f'%{entry_page}%'))
+    
+    # Get exit pages ordered by most recent first
+    exit_pages = exit_pages_query.order_by(desc(models.Visit.visited_at)).limit(limit).all()
+    
+    # Combine both exit link clicks and exit pages data
+    result = []
+    
+    # Add exit link clicks
+    for click in exit_clicks:
+        result.append({
+            "id": click.id,
+            "url": click.url,
+            "from_page": click.from_page,
+            "visitor_id": click.visitor_id,
+            "session_id": click.session_id,
+            "clicked_at": click.clicked_at,
+            "type": "exit_link_click"
+        })
 
-    # Return individual click entries
+    # Add exit pages
+    for visit in exit_pages:
+        result.append({
+            "id": f"exit_page_{visit.id}",
+            "url": visit.exit_page,
+            "from_page": visit.exit_page,  # For exit pages, the exit_page is both the URL and from_page
+            "visitor_id": visit.visitor_id,
+            "session_id": visit.session_id,
+            "clicked_at": visit.visited_at,
+            "type": "exit_page"
+        })
 
-    return [{
+    # Sort combined results by date (most recent first)
+    result.sort(key=lambda x: x['clicked_at'], reverse=True)
 
-        "id": click.id,
-
-        "url": click.url,
-
-        "from_page": click.from_page,
-
-        "visitor_id": click.visitor_id,
-
-        "session_id": click.session_id,
-
-
-        "clicked_at": click.clicked_at
-
-    } for click in exit_clicks]
+    # Return limited results
+    return result[:limit]
 
 
 
