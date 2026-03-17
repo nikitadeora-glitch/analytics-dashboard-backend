@@ -18,6 +18,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from pytz import timezone
 
+from urllib.parse import unquote_plus
+
 
 # Local date normalization function to avoid circular dependency
 def normalize_date_range(start_date: str | None, end_date: str | None):
@@ -1619,18 +1621,42 @@ def get_map_view(
 
     # Apply UTM campaign filter
     if utm_campaign:
-        query = query.filter(models.Visit.utm_campaign == utm_campaign)
-        print(f" Applied utm_campaign filter: {utm_campaign}")
+        # Decode URL-encoded UTM campaign value
+        try:
+            utm_campaign_decoded = unquote_plus(utm_campaign)
+            print(f" 🔗 Decoded utm_campaign: {utm_campaign} → {utm_campaign_decoded}")
+        except Exception as e:
+            print(f" ⚠️ URL decoding failed for utm_campaign: {e}")
+            utm_campaign_decoded = utm_campaign
+        
+        query = query.filter(models.Visit.utm_campaign == utm_campaign_decoded)
+        print(f" Applied utm_campaign filter: {utm_campaign_decoded}")
 
     # Apply UTM source filter
     if utm_source:
-        query = query.filter(models.Visit.utm_source == utm_source)
-        print(f" Applied utm_source filter: {utm_source}")
+        # Decode URL-encoded UTM source value
+        try:
+            utm_source_decoded = unquote_plus(utm_source)
+            print(f" 🔗 Decoded utm_source: {utm_source} → {utm_source_decoded}")
+        except Exception as e:
+            print(f" ⚠️ URL decoding failed for utm_source: {e}")
+            utm_source_decoded = utm_source
+        
+        query = query.filter(models.Visit.utm_source == utm_source_decoded)
+        print(f" Applied utm_source filter: {utm_source_decoded}")
 
     # Apply UTM medium filter
     if utm_medium:
-        query = query.filter(models.Visit.utm_medium == utm_medium)
-        print(f" Applied utm_medium filter: {utm_medium}")
+        # Decode URL-encoded UTM medium value
+        try:
+            utm_medium_decoded = unquote_plus(utm_medium)
+            print(f" 🔗 Decoded utm_medium: {utm_medium} → {utm_medium_decoded}")
+        except Exception as e:
+            print(f" ⚠️ URL decoding failed for utm_medium: {e}")
+            utm_medium_decoded = utm_medium
+        
+        query = query.filter(models.Visit.utm_medium == utm_medium_decoded)
+        print(f" Applied utm_medium filter: {utm_medium_decoded}")
 
     locations = query.group_by(
         models.Visit.country,

@@ -14,6 +14,8 @@ from typing import Optional
 
 from pytz import timezone
 
+from urllib.parse import unquote_plus
+
 
 # Local date normalization function to avoid circular dependency
 
@@ -183,13 +185,13 @@ FILTER_MAP = {
 
     "location_ip_address": "ip_address",
 
-    "visitor_visitor_type": "visitor_type"
+    "visitor_visitor_type": None  # Handled separately
 
 }
 
 
 
-def apply_filters_to_query(query, filters, db):
+def apply_filters_to_query(query, filters, db, start_dt=None, end_dt=None):
 
     """Apply custom filters to SQLAlchemy query"""
 
@@ -205,6 +207,13 @@ def apply_filters_to_query(query, filters, db):
 
     
 
+    # Handle visitor_type separately since it requires a subquery
+    visitor_type_filter = None
+    if 'visitor_visitor_type' in filters:
+        visitor_type_filter = filters.pop('visitor_visitor_type')
+        print(f"  👥 Visitor Type filter extracted: {visitor_type_filter}")
+
+    
     for filter_key, filter_value in filters.items():
 
         print(f"  Processing filter: {filter_key} = {filter_value}")
@@ -394,46 +403,82 @@ def apply_filters_to_query(query, filters, db):
             
 
             else:
-
                 # Check if there's an operator for this filter
-
                 operator_key = f"{filter_key}_operator"
-
                 operator = filters.get(operator_key, 'equals')
-
                 
-
+                # Special handling for entry_page and UTM parameters - decode URL if it's encoded
+                filter_value_processed = filter_value
+                if filter_key in ["entry_page", "utm_source", "utm_medium", "utm_campaign"] and filter_value:
+                    try:
+                        # Decode URL-encoded values
+                        filter_value_processed = unquote_plus(filter_value)
+                        print(f"    🔗 Decoded {filter_key}: {filter_value} → {filter_value_processed}")
+                    except Exception as e:
+                        print(f"    ⚠️ URL decoding failed for {filter_key}: {e}")
+                        filter_value_processed = filter_value
+                
                 if operator == 'equals':
-
-                    query = query.filter(getattr(models.Visit, db_field) == filter_value)
+                    query = query.filter(getattr(models.Visit, db_field) == filter_value_processed)
 
                 elif operator == 'greater':
-
-                    query = query.filter(getattr(models.Visit, db_field) > float(filter_value))
+                    query = query.filter(getattr(models.Visit, db_field) > float(filter_value_processed))
 
                 elif operator == 'less':
-
-                    query = query.filter(getattr(models.Visit, db_field) < float(filter_value))
+                    query = query.filter(getattr(models.Visit, db_field) < float(filter_value_processed))
 
                 elif operator == 'greater_equal':
-
-                    query = query.filter(getattr(models.Visit, db_field) >= float(filter_value))
+                    query = query.filter(getattr(models.Visit, db_field) >= float(filter_value_processed))
 
                 elif operator == 'less_equal':
-
-                    query = query.filter(getattr(models.Visit, db_field) <= float(filter_value))
+                    query = query.filter(getattr(models.Visit, db_field) <= float(filter_value_processed))
 
                 else:  # Default to contains for text fields
-
-                    query = query.filter(getattr(models.Visit, db_field).ilike(f"%{filter_value}%"))
+                    query = query.filter(getattr(models.Visit, db_field).ilike(f"%{filter_value_processed}%"))
 
                 
-
-                print(f"    ✅ Applied {db_field} {operator} {filter_value}")
+                print(f"    ✅ Applied {db_field} {operator} {filter_value_processed}")
 
         else:
 
             print(f"    ❌ Unknown filter key: {filter_key}")
+
+    # Apply visitor_type filter if present
+    if visitor_type_filter:
+        print(f"  👥 Applying visitor_type filter: {visitor_type_filter}")
+        
+        # Create subquery to get visit counts per visitor within the same date range
+        from sqlalchemy import select
+        visitor_visits_subquery = select(
+            models.Visit.visitor_id,
+            func.count(models.Visit.id).label('total_visits'),
+            func.min(models.Visit.visited_at).label('first_visit')
+        )
+        
+        # Apply the same date filtering to the subquery
+        if start_dt and end_dt:
+            visitor_visits_subquery = visitor_visits_subquery.filter(
+                models.Visit.visited_at >= start_dt,
+                models.Visit.visited_at <= end_dt
+            )
+        
+        visitor_visits_subquery = visitor_visits_subquery.group_by(models.Visit.visitor_id).subquery()
+        
+        # Join with the subquery
+        query = query.outerjoin(
+            visitor_visits_subquery,
+            models.Visit.visitor_id == visitor_visits_subquery.c.visitor_id
+        )
+        
+        # Apply filter based on visitor type
+        if visitor_type_filter.lower() == 'new visitors':
+            # New visitors: only their first visit (visit_count = 1)
+            query = query.filter(visitor_visits_subquery.c.total_visits == 1)
+        elif visitor_type_filter.lower() == 'returning visitors':
+            # Returning visitors: more than 1 visit
+            query = query.filter(visitor_visits_subquery.c.total_visits > 1)
+        
+        print(f"    ✅ Applied visitor_type filter: {visitor_type_filter}")
 
     print(f"🔍 Final query with filters applied")
 
@@ -892,7 +937,7 @@ def get_traffic_sources(
 
         if filter_params:
 
-            visits_query = apply_filters_to_query(visits_query, filter_params, db)
+            visits_query = apply_filters_to_query(visits_query, filter_params, db, start_dt, end_dt)
 
         visits = visits_query.all()
 

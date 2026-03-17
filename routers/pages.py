@@ -9,6 +9,7 @@ from typing import Optional, Dict
 from fastapi import Query
 import pytz
 from functools import lru_cache
+from urllib.parse import unquote_plus
 
 router = APIRouter()
 
@@ -407,20 +408,31 @@ def apply_filters_to_query(query, filters, db):
                 operator_key = f"{filter_key}_operator"
                 operator = filters.get(operator_key, 'equals')
                 
-                if operator == 'equals':
-                    query = query.filter(getattr(models.Visit, db_field) == filter_value)
-                elif operator == 'greater':
-                    query = query.filter(getattr(models.Visit, db_field) > float(filter_value))
-                elif operator == 'less':
-                    query = query.filter(getattr(models.Visit, db_field) < float(filter_value))
-                elif operator == 'greater_equal':
-                    query = query.filter(getattr(models.Visit, db_field) >= float(filter_value))
-                elif operator == 'less_equal':
-                    query = query.filter(getattr(models.Visit, db_field) <= float(filter_value))
-                else:  # Default to contains for text fields
-                    query = query.filter(getattr(models.Visit, db_field).ilike(f"%{filter_value}%"))
+                # Special handling for UTM parameters - decode URL if it's encoded
+                filter_value_processed = filter_value
+                if filter_key in ["utm_source", "utm_medium", "utm_campaign"] and filter_value:
+                    try:
+                        # Decode URL-encoded values
+                        filter_value_processed = unquote_plus(filter_value)
+                        print(f"    🔗 Decoded {filter_key}: {filter_value} → {filter_value_processed}")
+                    except Exception as e:
+                        print(f"    ⚠️ URL decoding failed for {filter_key}: {e}")
+                        filter_value_processed = filter_value
                 
-                print(f"    ✅ Applied {db_field} {operator} {filter_value}")
+                if operator == 'equals':
+                    query = query.filter(getattr(models.Visit, db_field) == filter_value_processed)
+                elif operator == 'greater':
+                    query = query.filter(getattr(models.Visit, db_field) > float(filter_value_processed))
+                elif operator == 'less':
+                    query = query.filter(getattr(models.Visit, db_field) < float(filter_value_processed))
+                elif operator == 'greater_equal':
+                    query = query.filter(getattr(models.Visit, db_field) >= float(filter_value_processed))
+                elif operator == 'less_equal':
+                    query = query.filter(getattr(models.Visit, db_field) <= float(filter_value_processed))
+                else:  # Default to contains for text fields
+                    query = query.filter(getattr(models.Visit, db_field).ilike(f"%{filter_value_processed}%"))
+                
+                print(f"    ✅ Applied {db_field} {operator} {filter_value_processed}")
         else:
             print(f"    ❌ Unknown filter key: {filter_key}")
     
