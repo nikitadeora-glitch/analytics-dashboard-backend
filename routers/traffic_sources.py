@@ -205,15 +205,24 @@ def apply_filters_to_query(query, filters, db, start_dt=None, end_dt=None):
 
     print(f"🔍 Applying {len(filters)} filters to query")
 
+    print(f"🔍 Filter keys received: {list(filters.keys())}")
+
+    print(f"🔍 Filter values: {filters}")
+
     
 
     # Handle visitor_type separately since it requires a subquery
+
     visitor_type_filter = None
+
     if 'visitor_visitor_type' in filters:
+
         visitor_type_filter = filters.pop('visitor_visitor_type')
+
         print(f"  👥 Visitor Type filter extracted: {visitor_type_filter}")
 
     
+
     for filter_key, filter_value in filters.items():
 
         print(f"  Processing filter: {filter_key} = {filter_value}")
@@ -226,9 +235,13 @@ def apply_filters_to_query(query, filters, db, start_dt=None, end_dt=None):
 
             base_key = filter_key.replace('_min', '').replace('_max', '')
 
+            print(f"    Range filter detected - base_key: {base_key}")
+
             if base_key in FILTER_MAP:
 
                 db_field = FILTER_MAP[base_key]
+
+                print(f"    Mapping {base_key} to database field: {db_field}")
 
                 if filter_key.endswith('_min'):
 
@@ -241,6 +254,10 @@ def apply_filters_to_query(query, filters, db, start_dt=None, end_dt=None):
                     query = query.filter(getattr(models.Visit, db_field) <= float(filter_value))
 
                     print(f"    ✅ Applied {db_field} <= {filter_value}")
+
+            else:
+
+                print(f"    ❌ Base key {base_key} not found in FILTER_MAP")
 
             continue  # Skip to next filter - range filters are handled here
 
@@ -678,6 +695,8 @@ def get_traffic_sources(
 
     system_platform_os: Optional[str] = None,
 
+    engagement_session_length: Optional[str] = None,
+
     engagement_session_length_min: Optional[int] = None,
 
     engagement_session_length_max: Optional[int] = None,
@@ -691,6 +710,7 @@ def get_traffic_sources(
     page_views_per_session: Optional[int] = None,
 
     page_views_per_session_operator: Optional[str] = None,
+    page_views_per_session_range: Optional[str] = None,
 
     utm_source: Optional[str] = None,
 
@@ -705,6 +725,8 @@ def get_traffic_sources(
     traffic_utm_campaign: Optional[str] = None,
 
     device: Optional[str] = None,
+
+    browser: Optional[str] = None,
 
     entry_page: Optional[str] = None,
 
@@ -751,6 +773,29 @@ def get_traffic_sources(
         if visitor_visitor_type:
 
             print(f"👥 Visitor Type filter: {visitor_visitor_type}")
+
+        if browser:
+
+            print(f"🌐 Browser filter: {browser}")
+
+        # Parse engagement_session_length range format (e.g., "30-60")
+        if engagement_session_length:
+            print(f"⏱️ Session Length filter: {engagement_session_length}")
+            try:
+                if '-' in engagement_session_length:
+                    parts = engagement_session_length.split('-')
+                    if len(parts) == 2:
+                        engagement_session_length_min = int(parts[0].strip())
+                        engagement_session_length_max = int(parts[1].strip())
+                        print(f"⏱️ Parsed session length: {engagement_session_length_min} to {engagement_session_length_max}")
+                else:
+                    # Single value case
+                    engagement_session_length_min = int(engagement_session_length.strip())
+                    engagement_session_length_max = None
+            except ValueError as e:
+                print(f"❌ Session length parsing error: {e}")
+                engagement_session_length_min = None
+                engagement_session_length_max = None
 
         # -----------------------------
 
@@ -924,6 +969,8 @@ def get_traffic_sources(
             'traffic_utm_campaign': traffic_utm_campaign,
 
             'device': device,
+
+            'browser': browser,
             
         
             'entry_page': entry_page,
@@ -943,6 +990,22 @@ def get_traffic_sources(
 
         print(f"📊 Found {len(visits)} visits in date range with traffic source and other filters")
 
+        # Debug: Show session duration values for first few visits
+        if visits and len(visits) > 0:
+            print(f"🔍 Sample session duration values:")
+            for i, visit in enumerate(visits[:5]):  # Show first 5
+                print(f"   Visit {i+1}: session_duration = {visit.session_duration}")
+            
+            # Show session duration statistics
+            session_durations = [v.session_duration for v in visits if v.session_duration is not None]
+            if session_durations:
+                print(f"📈 Session duration stats:")
+                print(f"   Min: {min(session_durations)}")
+                print(f"   Max: {max(session_durations)}")
+                print(f"   Avg: {sum(session_durations) / len(session_durations):.1f}")
+                print(f"   Count with duration: {len(session_durations)}")
+            else:
+                print(f"⚠️ No visits have session_duration data")
 
         if not visits:
 
@@ -1283,6 +1346,7 @@ def get_traffic_source_detail(
     page_views_per_session: Optional[int] = None,
 
     page_views_per_session_operator: Optional[str] = None,
+    page_views_per_session_range: Optional[str] = None,
 
     utm_source: Optional[str] = None,
 
@@ -1687,6 +1751,7 @@ def get_exit_links(
     page_views_per_session: Optional[int] = None,
 
     page_views_per_session_operator: Optional[str] = None,
+    page_views_per_session_range: Optional[str] = None,
 
     # System filters
 
