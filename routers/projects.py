@@ -428,13 +428,15 @@ def get_all_projects_stats(
 
     # Project data
 
+    # Check script installation status for each project
+    script_status_dict = {}
+    for project_id in project_ids:
+        has_visits = db.query(models.Visit).filter(models.Visit.project_id == project_id).first() is not None
+        script_status_dict[project_id] = has_visits
+
     result = []
 
-
-
     for project in projects:
-
-
 
         result.append({
 
@@ -448,6 +450,8 @@ def get_all_projects_stats(
             "created_at": project.created_at,
 
             "is_active": project.is_active,
+
+            "script_installed": script_status_dict.get(project.id, False),
 
 
             # PAGE VIEWS
