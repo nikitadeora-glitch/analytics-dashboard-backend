@@ -118,7 +118,7 @@ def invite_team_member(
         
         # Create invitation link
         frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
-        invite_link = f"{frontend_url}/accept-invite/{invite_token}"
+        invite_link = f"{frontend_url}/accept-invite?token={invite_token}"
         
         # Get project names for the email
         project_names = []
