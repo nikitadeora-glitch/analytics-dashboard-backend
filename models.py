@@ -350,6 +350,12 @@ class TeamInvite(Base):
     expires_at = Column(DateTime, nullable=False)
     accepted_at = Column(DateTime, nullable=True)
     
+    # OTP fields
+    otp = Column(String, nullable=True)  # 6-digit OTP
+    otp_expiry = Column(DateTime, nullable=True)  # OTP expiry time
+    is_verified = Column(Boolean, default=False)  # OTP verification status
+    is_accepted = Column(Boolean, default=False)  # Final acceptance status
+    
     # Relationship to user who sent the invite
     inviter = relationship("User", foreign_keys=[invited_by])
 

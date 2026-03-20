@@ -118,7 +118,7 @@ def invite_team_member(
         
         # Create invitation link
         frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
-        invite_link = f"{frontend_url}/accept-invite/{token}"
+        invite_link = f"{frontend_url}/accept-invite/{invite_token}"
         
         # Get project names for the email
         project_names = []
@@ -346,7 +346,7 @@ This invitation link will expire in 7 days. If you didn't expect this invitation
         
         # Send the email
         email_sent = send_email(invite.email, email_subject, text_body, html_body)
-        
+        print(f"guhiuhioi {email_sent}")
         if email_sent:
             print(f"✅ Invitation email sent to {invite.email}")
         else:
@@ -442,67 +442,61 @@ def cancel_invite(
 
 
 @router.get("/invite/{token}")
-def get_invite_by_token(token: str, db: Session = Depends(get_db)):
+def get_invite_details(token: str, db: Session = Depends(get_db)):
     """
-    Get invite details by token (for accept invite page)
+    Get invite details by token for accept invite page
     """
-    invite = db.query(models.TeamInvite).filter(
-        models.TeamInvite.token == token,
-        models.TeamInvite.status == "pending"
-    ).first()
+    invite = db.query(models.TeamInvite).filter(models.TeamInvite.token == token).first()
     
     if not invite:
-        raise HTTPException(status_code=404, detail="Invalid or expired invitation")
+        raise HTTPException(status_code=404, detail="Invalid invite token")
     
-    # Check if invite has expired
-    if datetime.utcnow() > invite.expires_at:
-        invite.status = "expired"
-        db.commit()
-        raise HTTPException(status_code=400, detail="Invitation has expired")
+    if invite.is_accepted:
+        raise HTTPException(status_code=400, detail="Invite already accepted")
     
-    # Get project details
-    projects = []
+    if invite.expires_at and invite.expires_at < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="Invite expired")
+    
+    # Get project names
+    project_names = []
     for project_id in invite.projects:
         project = db.query(models.Project).filter(models.Project.id == project_id).first()
         if project:
-            projects.append({
-                "id": project.id,
-                "name": project.name
-            })
-    
-    # Get inviter details
-    inviter = db.query(models.User).filter(models.User.id == invite.invited_by).first()
+            project_names.append(project.name)
     
     return {
         "email": invite.email,
         "role": invite.role,
-        "projects": projects,
-        "invited_by": inviter.full_name if inviter else "Team Admin",
-        "status": "pending"
+        "projects": project_names,
+        "invite_id": invite.id
     }
 
 
-@router.post("/send-otp")
+@router.post("/invite/send-otp")
 def send_otp(data: dict, db: Session = Depends(get_db)):
     """
-    Send OTP to user email for verification
+    Send OTP for invite verification
     """
-    email = data.get("email")
-    if not email:
-        raise HTTPException(status_code=400, detail="Email is required")
+    invite_id = data.get("invite_id")
+    if not invite_id:
+        raise HTTPException(status_code=400, detail="invite_id is required")
+    
+    invite = db.query(models.TeamInvite).filter(models.TeamInvite.id == invite_id).first()
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invite not found")
     
     # Generate 6-digit OTP
     import random
     otp = str(random.randint(100000, 999999))
+    invite.otp = otp
+    invite.otp_expiry = datetime.utcnow() + timedelta(minutes=5)
     
-    # Store OTP in database (you might want to create a separate table for this)
-    # For now, we'll use a simple approach with the TeamInvite table
-    # In production, you should use a proper OTP storage with expiration
+    db.commit()
     
     try:
         from email_utils import send_email
         
-        email_subject = "Your Verification Code"
+        email_subject = "Your OTP Code"
         
         # HTML email template
         html_body = f"""
@@ -511,7 +505,7 @@ def send_otp(data: dict, db: Session = Depends(get_db)):
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Verification Code</title>
+            <title>OTP Verification</title>
             <style>
                 body {{
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -579,14 +573,14 @@ def send_otp(data: dict, db: Session = Depends(get_db)):
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>Verification Code</h1>
+                    <h1>OTP Verification</h1>
                 </div>
                 <div class="content">
                     <p class="description">
-                        Use the verification code below to complete your team invitation acceptance:
+                        Use the verification code below to complete your team invitation:
                     </p>
                     <div class="otp-code">{otp}</div>
-                    <p class="expiry">This code will expire in 10 minutes</p>
+                    <p class="expiry">This code will expire in 5 minutes</p>
                 </div>
                 <div class="footer">
                     <p class="footer-text">
@@ -600,24 +594,22 @@ def send_otp(data: dict, db: Session = Depends(get_db)):
         
         # Plain text version
         text_body = f"""
-Verification Code
+OTP Verification
 
 Hello,
 
 Your verification code is: {otp}
 
-This code will expire in 10 minutes. Use it to complete your team invitation acceptance.
+This code will expire in 5 minutes. Use it to complete your team invitation.
 
 If you didn't request this code, you can safely ignore this email.
 """
         
         # Send email
-        email_sent = send_email(email, email_subject, text_body, html_body)
+        email_sent = send_email(invite.email, email_subject, text_body, html_body)
         
         if email_sent:
-            # Store OTP in session or temporary storage
-            # For demo purposes, we'll return it (in production, store securely)
-            return {"message": "OTP sent successfully", "otp": otp}  # Remove OTP in production
+            return {"message": "OTP sent successfully"}
         else:
             raise HTTPException(status_code=500, detail="Failed to send OTP")
             
@@ -626,23 +618,31 @@ If you didn't request this code, you can safely ignore this email.
         raise HTTPException(status_code=500, detail="Failed to send OTP")
 
 
-@router.post("/verify-otp")
-def verify_otp(data: dict, db: Session = Depends(get_db)):
+@router.post("/invite/verify")
+def verify_invite(data: dict, db: Session = Depends(get_db)):
     """
-    Verify OTP for email verification
+    Verify OTP for invite
     """
-    email = data.get("email")
+    invite_id = data.get("invite_id")
     otp = data.get("otp")
     
-    if not email or not otp:
-        raise HTTPException(status_code=400, detail="Email and OTP are required")
+    if not invite_id or not otp:
+        raise HTTPException(status_code=400, detail="invite_id and otp are required")
     
-    # For demo purposes, we'll accept any 6-digit OTP
-    # In production, verify against stored OTP
-    if len(otp) == 6 and otp.isdigit():
-        return {"message": "OTP verified successfully", "email": email}
-    else:
+    invite = db.query(models.TeamInvite).filter(models.TeamInvite.id == invite_id).first()
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invite not found")
+    
+    if invite.otp != otp:
         raise HTTPException(status_code=400, detail="Invalid OTP")
+    
+    if invite.otp_expiry < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="OTP expired")
+    
+    invite.is_verified = True
+    db.commit()
+    
+    return {"message": "Verified successfully"}
 
 
 @router.post("/assign-projects")
@@ -781,66 +781,39 @@ def remove_project_assignment(
     return {"message": "User removed from project successfully"}
 
 
-@router.post("/join")
-def join_project(data: dict, db: Session = Depends(get_db)):
+@router.post("/invite/join")
+def join_team(data: dict, db: Session = Depends(get_db)):
     """
-    Join project using invite token after OTP verification
+    Join team after OTP verification
     """
-    token = data.get("token")
-    email = data.get("email")
-    password = data.get("password")
+    invite_id = data.get("invite_id")
     
-    if not token or not email or not password:
-        raise HTTPException(status_code=400, detail="Token, email, and password are required")
+    if not invite_id:
+        raise HTTPException(status_code=400, detail="invite_id is required")
     
-    # Validate token
-    invite = db.query(models.TeamInvite).filter(
-        models.TeamInvite.token == token,
-        models.TeamInvite.status == "pending"
-    ).first()
-    
+    invite = db.query(models.TeamInvite).filter(models.TeamInvite.id == invite_id).first()
     if not invite:
-        raise HTTPException(status_code=404, detail="Invalid or expired invitation")
+        raise HTTPException(status_code=404, detail="Invite not found")
     
-    # Check if invite has expired
-    if datetime.utcnow() > invite.expires_at:
-        invite.status = "expired"
-        db.commit()
-        raise HTTPException(status_code=400, detail="Invitation has expired")
+    if not invite.is_verified:
+        raise HTTPException(status_code=400, detail="Not verified")
     
-    # Check if email matches invite
-    if invite.email != email:
-        raise HTTPException(status_code=400, detail="Email does not match invitation")
-    
-    # Check if user already exists
-    user = db.query(models.User).filter(models.User.email == email).first()
-    is_existing_user = user is not None
+    # Check if user exists
+    user = db.query(models.User).filter(models.User.email == invite.email).first()
     
     if not user:
-        # Hash password
-        from passlib.context import CryptContext
-        pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-        hashed_password = pwd_context.hash(password)
-        
         # Create new user
         user = models.User(
-            email=email,
-            hashed_password=hashed_password,
-            full_name=email.split('@')[0],  # Use email prefix as name
+            email=invite.email,
+            full_name=invite.email.split('@')[0],  # Use email prefix as name
             is_active=True,
             is_verified=True
         )
         db.add(user)
         db.commit()
         db.refresh(user)
-    else:
-        # Verify password for existing user
-        from passlib.context import CryptContext
-        pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-        if not pwd_context.verify(password, user.hashed_password):
-            raise HTTPException(status_code=400, detail="Invalid password for existing user")
     
-    # Add user to projects
+    # Assign user to projects
     for project_id in invite.projects:
         # Check if user-project relationship already exists
         existing_user_project = db.query(models.UserProject).filter(
@@ -857,41 +830,7 @@ def join_project(data: dict, db: Session = Depends(get_db)):
             )
             db.add(user_project)
     
-    # Mark invite as accepted
-    invite.status = "accepted"
-    invite.accepted_at = datetime.utcnow()
+    invite.is_accepted = True
     db.commit()
     
-    result = {
-        "message": "Successfully joined project",
-        "user_id": user.id,
-        "projects": invite.projects,
-        "role": invite.role,
-        "existing_user": is_existing_user
-    }
-    
-    # If existing user, create tokens and return them for auto-login
-    if is_existing_user:
-        from routers.auth import create_access_token, create_refresh_token
-        access_token = create_access_token(data={"sub": str(user.id)})
-        refresh_token = create_refresh_token(data={"sub": str(user.id)})
-        
-        # Count user's projects for onboarding determination
-        own_projects_count = db.query(models.Project).filter(models.Project.user_id == user.id).count()
-        assigned_projects_count = db.query(models.UserProject).filter(models.UserProject.user_id == user.id).count()
-        total_projects = own_projects_count + assigned_projects_count
-        
-        result.update({
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "token_type": "bearer",
-            "user": {
-                "id": user.id,
-                "full_name": user.full_name,
-                "email": user.email,
-                "has_projects": total_projects > 0,
-                "projects_count": total_projects
-            }
-        })
-    
-    return result
+    return {"message": "Joined successfully"}
