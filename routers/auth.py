@@ -9,7 +9,7 @@ import bcrypt
 import uuid
 
 # Import models and schemas directly
-from models import User, PasswordReset
+from models import User, PasswordReset, Project, UserProject
 from schemas import UserCreate, UserLogin, Token, PasswordResetRequest, PasswordResetConfirm, GoogleLoginSchema
 from database import get_db
 from sendgrid_email import send_notification_email
@@ -236,15 +236,26 @@ def logout(current_user: User = Depends(get_current_user)):
     return {"message": "Logged out successfully"}
 
 @router.get("/me")
-def get_current_user_info(current_user: User = Depends(get_current_user)):
+def get_current_user_info(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Get current user information"""
+    # Count user's own projects
+    own_projects_count = db.query(Project).filter(Project.user_id == current_user.id).count()
+    
+    # Count projects assigned to user (including team projects)
+    assigned_projects_count = db.query(UserProject).filter(UserProject.user_id == current_user.id).count()
+    
+    # Total projects count
+    total_projects = own_projects_count + assigned_projects_count
+    
     return {
         "id": current_user.id,
         "full_name": current_user.full_name,
         "email": current_user.email,
         "company_name": current_user.company_name,
         "is_verified": current_user.is_verified,
-        "created_at": current_user.created_at
+        "created_at": current_user.created_at,
+        "has_projects": total_projects > 0,
+        "projects_count": total_projects
     }
 
 @router.post("/forgot-password")

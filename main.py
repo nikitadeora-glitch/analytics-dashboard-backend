@@ -6,7 +6,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 from sqlalchemy.orm import Session
 from database import engine, get_db, Base
-from routers import projects, analytics, visitors, pages, traffic_sources, reports, auth, leads, chathistory, seo
+from routers import projects, analytics, visitors, pages, traffic_sources, reports, auth, leads, chathistory, seo, team
 import models
 import os
 from logging_config import *
@@ -191,6 +191,7 @@ app.include_router(reports.router, prefix="/api/reports", tags=["Reports"])
 app.include_router(leads.router, prefix="/api/lead", tags=["Leads"])
 app.include_router(chathistory.router, prefix="/api/chathistory", tags=["Chat History"])
 app.include_router(seo.router, prefix="/api/seo", tags=["SEO"])
+app.include_router(team.router, prefix="/api/team", tags=["Team"])
 
 
 

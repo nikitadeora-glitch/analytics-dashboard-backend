@@ -605,4 +605,33 @@ class ChatHistoryResponse(BaseModel):
     messages: List[ChatMessageResponse]
 
 
+# Team Invitation Schemas
+
+class TeamInviteCreate(BaseModel):
+    email: EmailStr
+    projects: List[int]
+    role: str  # 'editor', 'viewer', 'admin'
+    invited_by: int
+
+
+class TeamInviteResponse(BaseModel):
+    id: int
+    email: str
+    projects: List[int]
+    role: str
+    token: str
+    status: str
+    invited_by: int
+    created_at: datetime
+    expires_at: datetime
+    accepted_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
+
+class TeamInviteAccept(BaseModel):
+    token: str
+
+
 

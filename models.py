@@ -35,6 +35,7 @@ class User(Base):
     )
     projects = relationship("Project", back_populates="user")
     password_resets = relationship("PasswordReset", back_populates="user")
+    user_projects = relationship("UserProject", back_populates="user")
 
 
 
@@ -92,6 +93,7 @@ class Project(Base):
     user = relationship("User", back_populates="projects")
     visits = relationship("Visit", back_populates="project")
     pages = relationship("Page", back_populates="project")
+    user_projects = relationship("UserProject", back_populates="project")
 
 
 
@@ -332,3 +334,41 @@ class SEOToken(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     connection = relationship("SEOConnection", back_populates="tokens")
+
+
+class TeamInvite(Base):
+    __tablename__ = "team_invites"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, nullable=False, index=True)
+    projects = Column(JSON, nullable=False)  # Store list of project IDs
+    role = Column(String, nullable=False)  # 'editor', 'viewer', 'admin'
+    token = Column(String, unique=True, nullable=False, index=True)
+    status = Column(String, default="pending")  # 'pending', 'accepted', 'expired'
+    invited_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)
+    accepted_at = Column(DateTime, nullable=True)
+    
+    # Relationship to user who sent the invite
+    inviter = relationship("User", foreign_keys=[invited_by])
+
+
+class UserProject(Base):
+    """Many-to-many relationship between users and projects"""
+    __tablename__ = "user_projects"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    role = Column(String, nullable=False, default="viewer")  # 'admin', 'editor', 'viewer'
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    user = relationship("User")
+    project = relationship("Project")
+    
+    # Ensure unique user-project combination
+    __table_args__ = (
+        {"sqlite_autoincrement": True}
+    )
